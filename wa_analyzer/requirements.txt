@@ -1,0 +1,9 @@
+pandas
+matplotlib
+seaborn
+wordcloud
+gender-guesser
+vobject
+attrs
+streamlit
+plotly

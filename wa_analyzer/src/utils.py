@@ -1,0 +1,69 @@
+import gender_guesser.detector as gender
+import re
+
+class Utils:
+    def __init__(self):
+        self.detector = gender.Detector()
+        # Manual Overrides for nicknames and specific terms
+        self.overrides = {
+            'javi': 'male',
+            'javier': 'male',
+            'rodri': 'male',
+            'rodrigo': 'male',
+            'abuela': 'female',
+            'abuelo': 'male',
+            'mama': 'female',
+            'papa': 'male',
+            'tio': 'male',
+            'tia': 'female',
+            'primo': 'male',
+            'prima': 'female',
+            'dani': 'male', # Often Daniel
+            'alex': 'male', # Ambiguous but often Alexander/Alejandro
+            'nacho': 'male',
+            'pepe': 'male',
+            'lola': 'female',
+            'fran': 'male',
+            'manu': 'male',
+            'nico': 'male',
+            'tom': 'male',
+            'sam': 'male'
+        }
+
+    def guess_gender(self, name):
+        if not name:
+            return 'unknown'
+        
+        # 1. Clean up first name
+        # Split by hyphen if present (e.g. Jean-Pierre -> Jean)
+        name_clean = name.replace('-', ' ')
+        first_word = name_clean.split()[0]
+        
+        # Remove special chars but keep letters
+        first_word = re.sub(r'[^\w\s]', '', first_word)
+        
+        if not first_word:
+            return 'unknown'
+            
+        lower_name = first_word.lower()
+        
+        # 2. Check Overrides
+        if lower_name in self.overrides:
+            return self.overrides[lower_name]
+            
+        # 3. Use Detector
+        # Detector usually expects Title Case (e.g. "Jesus")
+        g = self.detector.get_gender(first_word.capitalize())
+        
+        # Map detector output to simple categories
+        if 'female' in g:
+            return 'female'
+        elif 'male' in g:
+            return 'male'
+        else:
+            return 'unknown'
+
+    def clean_text(self, text):
+        if not text:
+            return ""
+        return str(text).lower()
