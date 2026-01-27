@@ -343,10 +343,12 @@ class WhatsappAnalyzer:
         df['time_diff'] = df['timestamp'].diff().dt.total_seconds()
         df['prev_jid'] = df['jid_row_id'].shift(1)
         
+        if 'is_quote' not in df.columns: df['is_quote'] = False
+        
         initiations = df[
             (df['jid_row_id'] != df['prev_jid']) | 
-            (df['time_diff'] > threshold_seconds)
-        ]
+            ((df['time_diff'] > threshold_seconds) & (df['is_quote'] == False))
+        ].copy()
         
         their_initiations = initiations[initiations['from_me'] == 0]['contact_name'].value_counts()
         my_initiations = initiations[initiations['from_me'] == 1]['contact_name'].value_counts()
@@ -737,12 +739,24 @@ class WhatsappAnalyzer:
         target_from = 0 if reply_to == 0 else 1
         prev_from = 1 if reply_to == 0 else 0
         
-        replies = df[
+        # Ensure is_quote exists
+        if 'is_quote' not in df.columns: df['is_quote'] = False
+        
+        # Base Condition: Strict Alternating Sender in Same Chat
+        base_condition = (
             (df['from_me'] == target_from) & 
             (df['prev_from_me'] == prev_from) & 
-            (df['jid_row_id'] == df['prev_jid']) &
-            (df['delta'] < limit_hours * 3600) # Cap at limit
-        ].copy()
+            (df['jid_row_id'] == df['prev_jid'])
+        )
+        
+        # Time Condition OR Quote Condition
+        # If it's a quote, we count it even if delay is huge
+        valid_rows = base_condition & (
+            (df['delta'] < limit_hours * 3600) | 
+            (df['is_quote'] == True)
+        )
+        
+        replies = df[valid_rows].copy()
         
         if replies.empty: return None, None
         

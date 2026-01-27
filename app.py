@@ -642,9 +642,13 @@ if 'data' in st.session_state:
     with tab6:
         st.header("🎪 Fun & Insights")
         
+        col_fun_ctrl1, col_fun_ctrl2 = st.columns(2)
+        top_n_filter = col_fun_ctrl1.selectbox("Filter Rank to Top Contacts:", [50, 100, 200, "All"], index=1, help="Analyze only the most active contacts to reduce noise.")
+        top_n_val = None if top_n_filter == "All" else int(top_n_filter)
+        
         # Calculate Stats
-        beh_scorecard = analyzer.get_behavioral_scorecard()
-        fun_stats = analyzer.get_fun_stats()
+        beh_scorecard = analyzer.get_behavioral_scorecard() # Behavioral logic is global
+        fun_stats = analyzer.get_fun_stats(top_n=top_n_val)
         streaks = analyzer.get_streak_stats()
         killers = analyzer.get_conversation_killers()
         

@@ -434,5 +434,25 @@ class WhatsappParser:
              mentions_agg = mentions.groupby('message_row_id')['mentioned_jid_row_id'].apply(list).reset_index(name='mentions_list')
              merged = pd.merge(merged, mentions_agg, on='message_row_id', how='left')
              
+        # 11. Merge Quotes (to identify "Deep Replies")
+        quotes = self.parse_quotes()
+        if not quotes.empty:
+            # We just need to know IF it is a quote
+            quotes['is_quote'] = True
+            merged = pd.merge(merged, quotes[['message_row_id', 'is_quote']], on='message_row_id', how='left')
+            merged['is_quote'] = merged['is_quote'].fillna(False)
+        else:
+            merged['is_quote'] = False
+             
         return merged
+
+    def parse_quotes(self):
+        """
+        Parses message_quoted table to identify messages that quote others.
+        """
+        if not self.conn_msg: return pd.DataFrame()
+        query = "SELECT message_row_id FROM message_quoted"
+        try:
+            return pd.read_sql_query(query, self.conn_msg)
+        except: return pd.DataFrame()
 
