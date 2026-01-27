@@ -381,7 +381,7 @@ class WhatsappAnalyzer:
         
         return stats_pivot.dropna().reset_index()
 
-    def get_wordcloud_text(self, contact_name=None, filter_from_me=None):
+    def get_wordcloud_text(self, contact_name=None, filter_from_me=None, min_word_length=0):
         """
         filter_from_me: True (only My words), False (only Their words), None (All)
         """
@@ -400,7 +400,7 @@ class WhatsappAnalyzer:
             # Remove URLs first
             text = re.sub(r'http\S+', '', text)
             words = text.lower().split()
-            return " ".join([w for w in words if w not in STOPWORDS])
+            return " ".join([w for w in words if w not in STOPWORDS and len(w) >= min_word_length])
             
         clean_text = text_data.apply(clean_word)
         full_text = " ".join(clean_text.tolist())
