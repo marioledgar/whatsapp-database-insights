@@ -42,7 +42,7 @@ def get_config_json():
         'cfg_msgstore', 'cfg_wa', 'cfg_vcf', 'cfg_date_range',
         'cfg_ex_groups', 'cfg_ex_chan', 'cfg_ex_system', 'cfg_fam_list', 
         'cfg_ex_fam_glob', 'cfg_ex_non_con', 'cfg_ex_fam_gend', 
-        'cfg_long_stats'
+        'cfg_long_stats', 'cfg_reply_thresh'
     ]
     for k in keys_to_save:
         if k in st.session_state:
@@ -157,6 +157,15 @@ if 'data' in st.session_state:
     # Behavioral Config
     st.sidebar.subheader("Behavioral Config")
     use_longer_stats = st.sidebar.checkbox("Use Longer Time Stats", value=False, help="Ghosting: 5 days (vs 24h), Initiation: 2 days (vs 6h)", key="cfg_long_stats")
+    
+    reply_threshold_hours = st.sidebar.slider(
+        "Max Reply Delay (Hours)", 
+        min_value=1, 
+        max_value=120, 
+        value=12,
+        help="Messages after this delay are considered new conversations, not replies.",
+        key="cfg_reply_thresh"
+    )
     
     # Apply Global Filters
     filtered_df = df_raw.copy()
@@ -342,9 +351,9 @@ if 'data' in st.session_state:
         
         st.divider()
         st.subheader("⏱️ Reply Time Rankings (Avg Minutes)")
-        st.caption("Minimum 20 messages exchanged. Capped at 12h delays.")
+        st.caption(f"Minimum 25 messages. Delays > {reply_threshold_hours}h ignored.")
         
-        reply_stats = analyzer.get_reply_time_ranking(min_messages=25)
+        reply_stats = analyzer.get_reply_time_ranking(min_messages=25, max_delay_seconds=reply_threshold_hours*3600)
         
         if not reply_stats.empty:
             rt_col1, rt_col2 = st.columns(2)
