@@ -386,15 +386,24 @@ class WhatsappAnalyzer:
         
         if ignored.empty: return pd.DataFrame()
         
-        # Check if 'read_at' exists
-        if 'read_at' in self.data.columns:
-            ignored = ignored.copy()
-            # If read_at is not null -> True Ghost 👻
-            # If read_at is null -> Left on Delivered 📨
-            ignored.loc[:, 'type'] = ignored['read_at'].apply(lambda x: 'True Ghost 👻' if pd.notnull(x) else 'Left on Delivered 📨')
-        else:
-            # Fallback if no receipts data
-            ignored['type'] = 'Ignored (No Receipts)'
+        if ignored.empty: return pd.DataFrame()
+        
+        ignored = ignored.copy()
+        
+        # Robust Read Detection: Check 'read_at' AND 'status'
+        # If read_at is missing, maybe status=13 (Blue Check) is present?
+        if 'read_at' not in ignored.columns: ignored['read_at'] = pd.NaT
+        
+        if 'status' in ignored.columns:
+             # status 13 = Read. If read_at is empty/NaT but status is 13, mark it as read.
+             # We use timestamp as a proxy for read time just to make it non-null.
+             mask_status_read = (ignored['status'] == 13) & (ignored['read_at'].isna())
+             ignored.loc[mask_status_read, 'read_at'] = ignored.loc[mask_status_read, 'timestamp']
+
+        # Classify
+        # If read_at is not null -> True Ghost 👻
+        # If read_at is null -> Left on Delivered 📨
+        ignored.loc[:, 'type'] = ignored['read_at'].apply(lambda x: 'True Ghost 👻' if pd.notnull(x) else 'Left on Delivered 📨')
             
         stats = ignored.groupby(['contact_name', 'type']).size().unstack(fill_value=0)
         

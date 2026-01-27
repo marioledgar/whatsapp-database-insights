@@ -775,6 +775,13 @@ if 'data' in st.session_state:
              # Reaction stats is a dict
              if reaction_stats and 'top_reactors' in reaction_stats:
                   reaction_stats['top_reactors'] = reaction_stats['top_reactors'][~reaction_stats['top_reactors'].index.isin(me_names)]
+                  
+                  # Fix: Apply "Exclude Non-Contacts" filter to Reactors too
+                  # Because the reactor might be a non-contact even if the message thread is valid.
+                  if exclude_non_contacts:
+                      # Filter out names that are just numbers/invalid
+                      is_valid_contact = pd.Series(reaction_stats['top_reactors'].index, index=reaction_stats['top_reactors'].index).apply(lambda x: bool(re.search('[a-zA-Z]', str(x))))
+                      reaction_stats['top_reactors'] = reaction_stats['top_reactors'][is_valid_contact]
              
              # Emoji stats is dict
              # per_contact...
