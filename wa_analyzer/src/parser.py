@@ -265,16 +265,18 @@ class WhatsappParser:
     def parse_reactions(self):
         """
         Parses reactions via message_add_on tables.
-        Returns DataFrame with: message_row_id, reaction, reaction_sender_jid, reaction_timestamp
+        Returns DataFrame with: message_row_id, reaction, sender_jid_row_id, from_me, reaction_timestamp
         """
         if not self.conn_msg: return pd.DataFrame()
         
         # message_add_on_reaction -> message_add_on -> message
+        # IMPORTANT: Include 'from_me' to handle 'You' correctly
         query = """
         SELECT 
             mao.parent_message_row_id as message_row_id,
             mar.reaction,
             mao.sender_jid_row_id,
+            mao.from_me,
             mao.timestamp as reaction_timestamp
         FROM message_add_on_reaction mar
         JOIN message_add_on mao ON mar.message_add_on_row_id = mao._id
@@ -471,7 +473,21 @@ class WhatsappParser:
             reactions = pd.merge(reactions, jids_df, left_on='sender_jid_row_id', right_on='jid_row_id', how='left')
             
             # Create a robust sender column
-            reactions['sender_display'] = reactions['raw_string'].fillna(reactions['sender_jid_row_id'])
+            # Logic: If from_me=1, sender is 'You'.
+            import numpy as np
+            if 'from_me' in reactions.columns:
+                reactions['sender_display'] = np.where(
+                    reactions['from_me'] == 1, 
+                    'You', 
+                    reactions['raw_string'].fillna(reactions['sender_jid_row_id'])
+                )
+            else:
+                reactions['sender_display'] = reactions['raw_string'].fillna(reactions['sender_jid_row_id'])
+            
+            # FALLBACK: If sender is explicitly '-1' (id) or string '-1', it's likely 'You' (self)
+            reactions['sender_display'] = reactions['sender_display'].apply(
+                lambda x: 'You' if str(x) == '-1' or str(x) == '1' else x
+            )
             
             reactions_agg = reactions.groupby('message_row_id').apply(
                 lambda x: list(zip(x['reaction'], x['sender_display']))
