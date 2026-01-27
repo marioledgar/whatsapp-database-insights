@@ -220,7 +220,7 @@ if 'data' in st.session_state:
     col4.metric("Unique Contacts", stats['unique_contacts'])
 
     # --- Tabs ---
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Activity & Top Users", "🔥 Behavioral Patterns", "👫 Gender Insights", "📝 Word Cloud", "🔍 Chat Explorer"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📊 Activity & Top Users", "🔥 Behavioral Patterns", "👫 Gender Insights", "📝 Word Cloud", "🔍 Chat Explorer", "🎪 Fun & Insights"])
 
     with tab1:
         col_l, col_r = st.columns(2)
@@ -559,6 +559,92 @@ if 'data' in st.session_state:
             cols_to_show = ['timestamp', 'from_me', 'text_data']
             if 'mime_type' in sub_df.columns: cols_to_show.append('mime_type')
             st.dataframe(sub_df[cols_to_show].sort_values('timestamp', ascending=False).head(10))
+
+    with tab6:
+        st.header("🎪 Fun & Insights")
+        
+        # Calculate Stats
+        beh_scorecard = analyzer.get_behavioral_scorecard()
+        fun_stats = analyzer.get_fun_stats()
+        streaks = analyzer.get_streak_stats()
+        killers = analyzer.get_conversation_killers()
+        
+        # 1. Hall of Fame
+        st.subheader("🏆 Hall of Fame")
+        hof_1, hof_2, hof_3 = st.columns(3)
+        
+        # Helper to get top user
+        def get_top(df, col, exclude_list=[]):
+            if df.empty or col not in df.columns: return "N/A", 0
+            # Filter
+            idx = df.index
+            # Exclude numbers if possible
+            # We already have filters applied at 'analyzer' level but let's double check
+            sorted_df = df.sort_values(col, ascending=False)
+            if sorted_df.empty: return "N/A", 0
+            top_name = sorted_df.index[0]
+            top_val = sorted_df[col].iloc[0]
+            return top_name, top_val
+
+        with hof_1:
+            name, val = get_top(beh_scorecard, 'night_owl_pct')
+            st.metric("🦉 The Night Owl", name, f"{val:.1f}% Night Msgs")
+            
+        with hof_2:
+            name, val = get_top(beh_scorecard, 'early_bird_pct')
+            st.metric("☀️ The Early Bird", name, f"{val:.1f}% Morning Msgs")
+            
+        with hof_3:
+            name, val = get_top(fun_stats, 'laughs')
+            st.metric("😂 The Comedian", name, f"{int(val)} Laughs")
+            
+        st.divider()
+        
+        hof_4, hof_5, hof_6 = st.columns(3)
+        with hof_4:
+            name, val = get_top(fun_stats, 'deleted')
+            st.metric("🗑️ The Deleter", name, f"{int(val)} Retracted")
+            
+        with hof_5:
+            if not streaks.empty:
+                name = streaks.idxmax()
+                val = streaks.max()
+            else: name, val = "N/A", 0
+            st.metric("🔥 Streak Master", name, f"{val} Days")
+            
+        with hof_6:
+            if not killers.empty:
+                name = killers.index[0]
+                val = killers.iloc[0]
+            else: name, val = "N/A", 0
+            st.metric("🤐 Conversation Killer", name, f"{val} Silences (>24h)")
+            
+        st.divider()
+        
+        # 2. Charts
+        c_fun1, c_fun2 = st.columns(2)
+        
+        with c_fun1:
+            st.subheader("🎭 Double Text Ratio")
+            st.caption("Percentage of your turns that are double-texts (continuing without reply after >20m).")
+            if not beh_scorecard.empty:
+                dt_df = beh_scorecard.sort_values('double_text_ratio', ascending=False).head(15)
+                fig_dt = px.bar(dt_df, x='double_text_ratio', y=dt_df.index, orientation='h',
+                                title="Highest Double Text Ratio",
+                                color='gender', color_discrete_map={'male': '#636EFA', 'female': '#EF553B', 'unknown': 'gray'})
+                fig_dt.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title="Double Text %")
+                st.plotly_chart(fig_dt, width='stretch')
+                
+        with c_fun2:
+            st.subheader("🌵 Dry Texter Index")
+            st.caption("Average words per message.")
+            if not fun_stats.empty:
+                dry_df = fun_stats.sort_values('avg_word_len', ascending=True).head(15)
+                fig_dry = px.bar(dry_df, x='avg_word_len', y=dry_df.index, orientation='h',
+                                 title="Shortest Responses (Dryest)",
+                                 color='gender', color_discrete_map={'male': '#636EFA', 'female': '#EF553B', 'unknown': 'gray'})
+                fig_dry.update_layout(yaxis={'categoryorder':'total descending'}, xaxis_title="Avg Words/Msg")
+                st.plotly_chart(fig_dry, width='stretch')
 
 else:
     st.info("👈 Please enter file paths.")

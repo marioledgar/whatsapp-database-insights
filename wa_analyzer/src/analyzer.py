@@ -412,3 +412,197 @@ class WhatsappAnalyzer:
         valid_words = [w for w in words if w not in STOPWORDS and len(w) >= min_word_length]
         
         return " ".join(valid_words)
+
+    def get_behavioral_scorecard(self):
+        """
+        Returns a DataFrame with behavioral metrics per contact:
+        - night_owl_pct: % msgs sent 00:00-06:00
+        - early_bird_pct: % msgs sent 06:00-09:00
+        - double_text_ratio: "Consecutive turns" / "Total turns" ratio
+        """
+        if self.data.empty: return pd.DataFrame()
+        
+        df = self.data.copy()
+        
+        # 1. Time based Metrics
+        df['hour'] = df['timestamp'].dt.hour
+        total_counts = df['contact_name'].value_counts()
+        
+        night_counts = df[(df['hour'] >= 0) & (df['hour'] < 6)]['contact_name'].value_counts()
+        early_counts = df[(df['hour'] >= 6) & (df['hour'] < 9)]['contact_name'].value_counts()
+        
+        stats = pd.DataFrame({
+            'total': total_counts,
+            'night_owl': night_counts,
+            'early_bird': early_counts
+        }).fillna(0)
+        
+        stats['night_owl_pct'] = (stats['night_owl'] / stats['total']) * 100
+        stats['early_bird_pct'] = (stats['early_bird'] / stats['total']) * 100
+        
+        # 2. Double Texter Logic (Smart)
+        # Sort by JID (chat context) then time
+        # NOTE: For global stats, this mixes chats, but 'contact_name' grouping handles it roughly well 
+        # providing we respect JID boundaries.
+        df_sorted = df.sort_values(['jid_row_id', 'timestamp'])
+        
+        df_sorted['prev_sender'] = df_sorted['contact_name'].shift(1)
+        df_sorted['prev_jid'] = df_sorted['jid_row_id'].shift(1)
+        df_sorted['time_diff'] = df_sorted['timestamp'].diff().dt.total_seconds().fillna(0)
+        
+        # Define Threshold for "New Turn" within same sender (e.g. 20 mins)
+        TURN_THRESHOLD = 1200 # 20 minutes
+        
+        # A "Turn Start" is:
+        # 1. Different sender than previous
+        # 2. OR Same sender but > 20 mins gap (Double Text)
+        # 3. OR Different JID
+        
+        # Identify "Same Sender, Same JID"
+        is_same_sender = (df_sorted['contact_name'] == df_sorted['prev_sender']) & (df_sorted['jid_row_id'] == df_sorted['prev_jid'])
+        
+        # A Double Text Event is: Same Sender + Same JID + Gap > Threshold
+        double_text_events = df_sorted[is_same_sender & (df_sorted['time_diff'] > TURN_THRESHOLD)]
+        dt_counts = double_text_events['contact_name'].value_counts()
+        
+        # Total Turns for a user:
+        # We count every time they start a message block.
+        # Condition: (Sender != PrevSender) OR (Sender == PrevSender AND Time > Threshold) OR (New JID)
+        # Simplified: All messages distinct from "Same Sender & Short Gap"
+        # i.e. everything that is NOT a "continuation".
+        # Continuation = Same Sender & Same JID & Time <= Threshold
+        continuation_mask = is_same_sender & (df_sorted['time_diff'] <= TURN_THRESHOLD)
+        turn_starts = df_sorted[~continuation_mask]
+        turn_counts = turn_starts['contact_name'].value_counts()
+        
+        stats['double_texts'] = dt_counts
+        stats['total_turns'] = turn_counts
+        stats = stats.fillna(0)
+        
+        stats['double_text_ratio'] = 0.0
+        mask_turns = stats['total_turns'] > 0
+        stats.loc[mask_turns, 'double_text_ratio'] = (stats.loc[mask_turns, 'double_texts'] / stats.loc[mask_turns, 'total_turns']) * 100
+        
+        # Add Gender
+        gender_map = self.data.drop_duplicates('contact_name').set_index('contact_name')['gender']
+        stats['gender'] = stats.index.map(gender_map)
+        
+        return stats
+
+    def get_fun_stats(self):
+        """
+        Returns stats for:
+        - Laughs
+        - Emojis (Top used - placeholder logic)
+        - Media counts
+        - Review/Deleted counts
+        - Dry Texter (Avg Length)
+        """
+        df = self.data.copy()
+        
+        # 1. Laughs
+        # Regex for haha, jajaja, lol, lmao, risas, xD, 😂, 🤣
+        laugh_pattern = r'(?i)(haha|jaja|lol|lmao|risas|xD|😂|🤣)'
+        df['has_laugh'] = df['text_data'].astype(str).str.contains(laugh_pattern, regex=True)
+        laugh_counts = df[df['has_laugh']]['contact_name'].value_counts()
+        
+        # 2. Media & Deleted
+        # Mime types: image/jpeg, video/mp4, audio/ogg, etc.
+        # Deleted: message_type=15 presumably (REVOKE) or specific text
+        
+        # Revokes (Type 15 is standard for revokes in some versions, but check text too)
+        # Common text: "This message was deleted", "Eliminaste este mensaje"
+        revoke_pattern = r'(?i)(This message was deleted|Eliminaste este mensaje|Se eliminó este mensaje)'
+        is_revoked = df['text_data'].astype(str).str.fullmatch(revoke_pattern)
+        if 'message_type' in df.columns:
+            is_revoked = is_revoked | (df['message_type'] == 15)
+            
+        deleted_counts = df[is_revoked]['contact_name'].value_counts()
+        
+        # Media
+        media_mask = df['mime_type'].notnull()
+        media_counts = df[media_mask]['contact_name'].value_counts()
+        
+        # 3. Dry Texter (Avg Words)
+        # Filter for TEXT messages only (no media, no revokes)
+        text_only = df[~media_mask & ~is_revoked & df['text_data'].notnull()].copy()
+        text_only['word_count'] = text_only['text_data'].astype(str).str.split().str.len()
+        avg_len = text_only.groupby('contact_name')['word_count'].mean()
+        
+        stats = pd.DataFrame({
+            'laughs': laugh_counts,
+            'media': media_counts,
+            'deleted': deleted_counts,
+            'avg_word_len': avg_len
+        }).fillna(0)
+        
+        # Add gender
+        gender_map = self.data.drop_duplicates('contact_name').set_index('contact_name')['gender']
+        stats['gender'] = stats.index.map(gender_map)
+        
+        return stats
+
+    def get_streak_stats(self):
+        """
+        Calculates the longest streak of consecutive days with messages.
+        Returns Series: contact_name -> longest_streak (int)
+        """
+        df = self.data.copy()
+        df['date'] = df['timestamp'].dt.date
+        
+        # Get unique dates per contact
+        # Group by contact, then find streaks
+        # Optimization: Global streak or per contact? 
+        # Usually streak is "Me + Them" (Chat Streak). 
+        # But here we might want "Who do I have the best streak with?"
+        # So group by contact.
+        
+        results = {}
+        
+        # Aggregate unique dates per contact
+        contact_dates = df.groupby('contact_name')['date'].unique()
+        
+        for contact, dates in contact_dates.items():
+            if len(dates) < 2:
+                results[contact] = 1 if len(dates) == 1 else 0
+                continue
+                
+            sorted_dates = sorted(dates)
+            
+            # Logic for generic streak
+            max_streak = 1
+            current_streak = 1
+            
+            for i in range(1, len(sorted_dates)):
+                delta = (sorted_dates[i] - sorted_dates[i-1]).days
+                if delta == 1:
+                    current_streak += 1
+                else:
+                    max_streak = max(max_streak, current_streak)
+                    current_streak = 1
+            
+            max_streak = max(max_streak, current_streak)
+            results[contact] = max_streak
+            
+        return pd.Series(results, name='longest_streak')
+
+    def get_conversation_killers(self, threshold_seconds=86400):
+        """
+        Who sent the last message before a long silence?
+        """
+        df = self.data.sort_values(['jid_row_id', 'timestamp']).copy()
+        df['time_to_next'] = df['timestamp'].shift(-1) - df['timestamp']
+        df['next_jid'] = df['jid_row_id'].shift(-1)
+        
+        # Filter: Gap > Threshold OR End of Chat (Next JID diff, or Last msg)
+        # Note: "End of Chat" usually means silence until now.
+        
+        # We consider a "Kill" if silence > 24h.
+        # We verify it's the same chat.
+        valid_gap = (df['jid_row_id'] == df['next_jid']) & (df['time_to_next'].dt.total_seconds() > threshold_seconds)
+        
+        # Also include the absolute last message of the chat? 
+        # Maybe not "Killer" but "Last Word". Current logic: Silence breakers vs Silence makers.
+        
+        killers = df[valid_gap]['contact_name'].value_counts()
+        return killers
