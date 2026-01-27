@@ -552,7 +552,16 @@ if 'data' in st.session_state:
             # Use df_base (includes 'Me') and filter by chat_name to get the full conversation
             sub_df = df_base[df_base['chat_name'] == selected_contact]
             st.write(f"### Analysis: **{selected_contact}**")
-            st.write(f"Total Messages: {len(sub_df)}")
+            st.write(f"### Analysis: **{selected_contact}**")
+            
+            # Breakdown Stats
+            total_msgs = len(sub_df)
+            me_count = sub_df[sub_df['from_me'] == 1].shape[0]
+            them_count = total_msgs - me_count
+            me_pct = (me_count / total_msgs * 100) if total_msgs > 0 else 0
+            them_pct = (them_count / total_msgs * 100) if total_msgs > 0 else 0
+            
+            st.write(f"**Total Messages:** {total_msgs} &nbsp; | &nbsp; **Me:** {me_count} ({me_pct:.1f}%) &nbsp; | &nbsp; **Them:** {them_count} ({them_pct:.1f}%)")
             
             chat_analyzer = WhatsappAnalyzer(sub_df)
             my_reply, their_reply = chat_analyzer.calculate_chat_reply_times()
@@ -739,7 +748,8 @@ if 'data' in st.session_state:
         killers = full_analyzer_tab6.get_conversation_killers(exclude_groups=ex_groups)
         
         # New Stats
-        reaction_stats = full_analyzer_tab6.get_reaction_stats(exclude_groups=ex_groups)
+        # Pass exclude_me (global) to filter "Me" from top reactors
+        reaction_stats = full_analyzer_tab6.get_reaction_stats(exclude_groups=ex_groups, exclude_me=exclude_me)
         emoji_stats = full_analyzer_tab6.get_emoji_stats(top_n=top_n_val, exclude_groups=ex_groups)
         mention_stats = full_analyzer_tab6.get_mention_stats(top_n=top_n_val, exclude_groups=ex_groups)
         history_stats = full_analyzer_tab6.get_historical_stats(exclude_groups=ex_groups)

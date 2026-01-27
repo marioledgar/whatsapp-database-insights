@@ -827,10 +827,10 @@ class WhatsappAnalyzer:
             
         return killers
 
-    def get_reaction_stats(self, exclude_groups=False):
+    def get_reaction_stats(self, exclude_groups=False, exclude_me=False):
         """
         Returns stats about reactions.
-        (Updated to remove 'Me' from top reactors)
+        (Updated to remove 'Me' from top reactors if exclude_me=True)
         """
         if 'reactions_list' not in self.data.columns: return None
         
@@ -841,14 +841,27 @@ class WhatsappAnalyzer:
         
         all_reactions = []
         for idx, row in df_reacts.iterrows():
-            for emoji, sender in row['reactions_list']:
-                all_reactions.append({
-                    'message_id': row['message_row_id'],
-                    'chat_contact': row['contact_name'], 
-                    'reaction': emoji,
-                    'sender': sender, 
-                    'preview': str(row['text_data'])[:50]
-                })
+            for reaction_tuple in row['reactions_list']:
+                # Handle tuple vs list format safely
+                if isinstance(reaction_tuple, (list, tuple)) and len(reaction_tuple) >= 2:
+                    emoji = reaction_tuple[0]
+                    sender = str(reaction_tuple[1])
+                    
+                    # Robust mapping of "Self" markers to 'You'
+                    if sender in ['-1', '1', '-1.0', '1.0', 'None']: sender = 'You'
+                    
+                    # If exclude_me is True and sender is 'You', skip adding
+                    if exclude_me and sender == 'You':
+                        continue
+                        
+                    all_reactions.append({
+                        'message_id': row['message_row_id'],
+                        'chat_contact': row['contact_name'], 
+                        'reaction': emoji,
+                        'sender': sender, 
+                        'preview': str(row['text_data'])[:50]
+                    })
+
         
         if not all_reactions: return None
         
