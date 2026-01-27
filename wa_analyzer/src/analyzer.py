@@ -732,14 +732,17 @@ class WhatsappAnalyzer:
             
         return killers
 
-    def get_reaction_stats(self):
+    def get_reaction_stats(self, exclude_groups=False):
         """
         Returns stats about reactions.
         (Updated to remove 'Me' from top reactors)
         """
         if 'reactions_list' not in self.data.columns: return None
         
-        df_reacts = self.data[['message_row_id', 'contact_name', 'reactions_list', 'text_data']].dropna(subset=['reactions_list']).copy()
+        df = self.data
+        if exclude_groups: df = df[~df['is_group']]
+        
+        df_reacts = df[['message_row_id', 'contact_name', 'reactions_list', 'text_data']].dropna(subset=['reactions_list']).copy()
         
         all_reactions = []
         for idx, row in df_reacts.iterrows():

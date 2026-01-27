@@ -662,7 +662,7 @@ if 'data' in st.session_state:
         # New Stats
         # Make sure these methods accept the param or logic inside uses data
         # I need to update analyzer for these too.
-        reaction_stats = analyzer.get_reaction_stats() # TODO: Add exclude_groups
+        reaction_stats = analyzer.get_reaction_stats(exclude_groups=ex_groups)
         emoji_stats = analyzer.get_emoji_stats(top_n=top_n_val, exclude_groups=ex_groups)
         mention_stats = analyzer.get_mention_stats(top_n=top_n_val, exclude_groups=ex_groups)
         history_stats = analyzer.get_historical_stats(exclude_groups=ex_groups)
@@ -826,29 +826,7 @@ if 'data' in st.session_state:
              else:
                  st.info("Everyone loves you! 💖")
         
-        col_lod1, col_lod2 = st.columns(2)
-        
-        with col_lod1:
-             st.write("**People I Ignore** (Me → Them)")
-             # Use get_left_on_read_stats which now has breakdown
-             my_ignore_stats = analyzer.get_left_on_read_stats()
-             if not my_ignore_stats.empty:
-                 # Stacked bar chart? Or separate?
-                 # 'True Ghost 👻' and 'Left on Delivered 📨' columns
-                 # We want relevant cols only
-                 cols_to_plot = [c for c in my_ignore_stats.columns if c in ['True Ghost 👻', 'Left on Delivered 📨']]
-                 st.bar_chart(my_ignore_stats[cols_to_plot].head(15), horizontal=True) # Streamlit bar_chart handles index
-             else:
-                 st.info("You're a saint! 😇")
 
-        with col_lod2:
-             st.write("**People Who Ignore Me** (Them → Me)")
-             them_ignore_stats = analyzer.get_true_ghosting_stats()
-             if not them_ignore_stats.empty:
-                 cols_to_plot = [c for c in them_ignore_stats.columns if c in ['True Ghost 👻', 'Left on Delivered 📨']]
-                 st.bar_chart(them_ignore_stats[cols_to_plot].head(15), horizontal=True)
-             else:
-                 st.info("Everyone loves you! 💖")
             
         st.divider()
         
@@ -877,19 +855,7 @@ if 'data' in st.session_state:
                 fig_dry.update_layout(yaxis={'categoryorder':'total descending'}, xaxis_title="Avg Words/Msg")
                 st.plotly_chart(fig_dry, width='stretch')
         
-        st.divider()
-        st.subheader("👍 Reaction Highlights")
-        r_stats = analyzer.get_reaction_stats()
-        if r_stats:
-             c_r1, c_r2 = st.columns(2)
-             with c_r1:
-                 st.write("**Top Emojis**")
-                 st.dataframe(r_stats['top_emojis'])
-             with c_r2: 
-                 st.write("**Most Reacted Messages**")
-                 st.dataframe(r_stats['most_reacted'][['preview', 'count', 'chat_contact']])
-        else:
-            st.info("No reactions found.")
+
 
     with tab7:
         st.header("🗺️ Location Map")
