@@ -652,6 +652,18 @@ if 'data' in st.session_state:
         streaks = analyzer.get_streak_stats()
         killers = analyzer.get_conversation_killers()
         
+        # New Stats
+        reaction_stats = analyzer.get_reaction_stats()
+        emoji_stats = analyzer.get_emoji_stats(top_n=top_n_val)
+        mention_stats = analyzer.get_mention_stats(top_n=top_n_val)
+        history_stats = analyzer.get_historical_stats()
+        
+        # Pre-calc combined media for Gallery Curator
+        if 'image_media' in fun_stats.columns and 'video_media' in fun_stats.columns:
+            fun_stats['gallery_count'] = fun_stats['image_media'] + fun_stats['video_media']
+        else:
+            fun_stats['gallery_count'] = fun_stats['media'] # Fallback
+            
         # 1. Hall of Fame
         st.subheader("🏆 Hall of Fame")
         hof_1, hof_2, hof_3 = st.columns(3)
@@ -702,6 +714,84 @@ if 'data' in st.session_state:
             st.metric("🤐 Conversation Killer", name, f"{val} Silences (>24h)")
             
         st.divider()
+        
+        hof_7, hof_8, hof_9 = st.columns(3)
+        with hof_7:
+            name, val = get_top(fun_stats, 'audio_media')
+            st.metric("🎙️ The Podcaster", name, f"{int(val)} Voice Notes")
+            
+        with hof_8:
+            name, val = get_top(fun_stats, 'gallery_count')
+            st.metric("🖼️ Gallery Curator", name, f"{int(val)} Pics/Vids")
+            
+        with hof_9:
+             if reaction_stats and not reaction_stats['top_reactors'].empty:
+                 name = reaction_stats['top_reactors'].index[0]
+                 val = reaction_stats['top_reactors'].iloc[0]
+             else: name, val = "N/A", 0
+             st.metric("😍 Reaction addict", name, f"{val} Reactions")
+             
+        st.divider()
+        
+        # --- NEW SECTIONS ---
+        
+        # 1. Emoji Analysis
+        if emoji_stats and not emoji_stats['per_contact'].empty:
+             st.subheader("❤️ The Emoji Fanatic")
+             # Show Top 5 Emojis for Top 5 Users
+             # emoji_stats['per_contact'] is a DF with contact, emoji, count
+             # Pivot to allow nice display? Or just list?
+             # Let's show a dataframe of "User | Top 5 Emojis"
+             
+             # Group by contact, join emojis
+             top_emo_disp = emoji_stats['per_contact'].groupby('contact_name')['emoji'].apply(lambda x: " ".join(x)).reset_index(name='Top Emojis')
+             # Join with count of total emojis logic? 
+             # Just show table
+             st.dataframe(top_emo_disp.set_index('contact_name').head(10), use_container_width=True)
+             
+        # 2. Reaction Deep Dive
+        if reaction_stats:
+            st.subheader("😍 Reaction Insights")
+            col_r1, col_r2 = st.columns(2)
+            with col_r1:
+                st.write("**Most Reacted Messages**")
+                st.dataframe(reaction_stats['most_reacted'][['chat_contact', 'preview', 'count']].head(5))
+            with col_r2:
+                st.write("**Top Global Emojis**")
+                # Top emojis as bar chart
+                top_em = reaction_stats['top_emojis']
+                st.bar_chart(top_em)
+                
+        # 3. Mentions
+        if mention_stats:
+            st.subheader("📢 Mentions (@Tags)")
+            col_m1, col_m2 = st.columns(2)
+            with col_m1:
+                st.write("**Who Mentions Me Most?**")
+                st.bar_chart(mention_stats['who_mentions_me'])
+            with col_m2:
+                st.write("**Who Do I Mention Most?**")
+                st.bar_chart(mention_stats['i_mention'])
+                
+        # 4. Historical Deep Dive
+        if history_stats:
+            st.subheader("📜 Historical Deep Dive")
+            
+            # Velocity
+            st.write("**⚡ Message Velocity (Max Words Per Minute)**")
+            st.caption("Highest WPM achieved in a single minute of conversation.")
+            st.bar_chart(history_stats['velocity_wpm'].head(15), horizontal=True)
+            
+            # First Message
+            st.write("**🕰️ How it Started (First Messages)**")
+            first_msgs = history_stats['first_msgs'].reset_index()
+            # Select contact
+            sel_contact_hist = st.selectbox("Select Contact to see First Message:", first_msgs['contact_name'].unique())
+            if sel_contact_hist:
+                row = first_msgs[first_msgs['contact_name'] == sel_contact_hist].iloc[0]
+                st.markdown(f"**Date:** {row['timestamp']}")
+                st.markdown(f"**Message:** *\"{row['text_data']}\"*")
+
         st.divider()
         col_lod1, col_lod2 = st.columns(2)
         

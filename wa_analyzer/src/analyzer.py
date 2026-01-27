@@ -565,7 +565,70 @@ class WhatsappAnalyzer:
         gender_map = self.data.drop_duplicates('contact_name').set_index('contact_name')['gender']
         stats['gender'] = stats.index.map(gender_map)
         
-        return stats
+        # 4. Detailed Media Breakdown
+        # MIME types: audio/*, image/*, video/*, image/webp (sticker)
+        if 'mime_type' in df_top.columns:
+            df_top['mime_cat'] = df_top['mime_type'].apply(lambda x: 
+                'audio' if pd.notnull(x) and 'audio' in x else
+                'image' if pd.notnull(x) and 'image' in x and 'webp' not in x else
+                'video' if pd.notnull(x) and 'video' in x else
+                'sticker' if pd.notnull(x) and ('webp' in x or 'sticker' in x) else
+                'other' if pd.notnull(x) else None
+            )
+            media_breakdown = df_top.groupby(['contact_name', 'mime_cat']).size().unstack(fill_value=0)
+            stats = stats.join(media_breakdown, rsuffix='_media')
+        
+        return stats.fillna(0)
+
+    def get_emoji_stats(self, top_n=100):
+        """
+        Returns top 5 emojis per contact.
+        Warning: Can be slow on large datasets.
+        """
+        import emoji
+        
+        df = self.data.copy()
+        if top_n and top_n > 0:
+             top_ids = df['contact_name'].value_counts().head(top_n).index
+             df = df[df['contact_name'].isin(top_ids)].copy()
+        
+        # Extract emojis
+        # Helper to get list of emojis
+        def extract_emojis(text):
+            if not isinstance(text, str): return []
+            return [e['emoji'] for e in emoji.emoji_list(text)]
+        
+        # Filter for messages with text
+        text_msgs = df[df['text_data'].notnull()]
+        
+        # Apply extraction
+        # This gives a column of lists
+        emoji_lists = text_msgs['text_data'].apply(extract_emojis)
+        
+        # Explode to get one row per emoji instance
+        # Create temp DF
+        emoji_df = pd.DataFrame({
+            'contact_name': text_msgs['contact_name'],
+            'emoji': emoji_lists
+        }).explode('emoji')
+        
+        # Drop nulls (no emojis)
+        emoji_df = emoji_df.dropna(subset=['emoji'])
+        
+        if emoji_df.empty: return pd.DataFrame()
+        
+        # Count per contact
+        # Group by Contact + Emoji
+        emoji_counts = emoji_df.groupby(['contact_name', 'emoji']).size().reset_index(name='count')
+        
+        # Get Top 5 per contact
+        top_emojis = emoji_counts.sort_values(['contact_name', 'count'], ascending=[True, False]) \
+            .groupby('contact_name').head(5)
+            
+        # Also Global Top Emojis
+        global_top = emoji_df['emoji'].value_counts().head(10)
+        
+        return {'per_contact': top_emojis, 'global': global_top}
 
     def get_streak_stats(self):
         """
@@ -673,6 +736,88 @@ class WhatsappAnalyzer:
         msg_counts = feat_df.groupby(['message_id', 'preview', 'chat_contact']).size().sort_values(ascending=False).head(10).reset_index(name='count')
         
         return {'top_reactors': top_reactors, 'top_emojis': top_emojis, 'most_reacted': msg_counts}
+
+    def get_mention_stats(self, top_n=50):
+        """
+        Analyze @mentions.
+        Returns: Who mentions me most? Who do I mention most?
+        """
+        if 'mentions_list' not in self.data.columns: return None
+        
+        # 1. Build JID Map (Sender JID -> Contact Name)
+        # We use existing data.
+        # Prefer using 'sender_jid_row_id' if available (added in Parser V2)
+        # Else we can't reliably map mentions to names unless we have the JID.
+        if 'sender_jid_row_id' not in self.data.columns:
+             # Fallback: We can't do accurate mention mapping without JIDs
+             return None
+             
+        # Create Map: ID -> Name
+        jid_map = self.data[['sender_jid_row_id', 'contact_name']].dropna().drop_duplicates('sender_jid_row_id').set_index('sender_jid_row_id')['contact_name']
+        
+        # 2. Explode Mentions
+        df_mentions = self.data[['contact_name', 'from_me', 'mentions_list']].dropna(subset=['mentions_list']).copy()
+        df_exploded = df_mentions.explode('mentions_list') # mentions_list contains JID Row IDs
+        
+        # 3. Map Mentioned ID to Name
+        # 'mentions_list' column now has the ID
+        df_exploded['mentioned_name'] = df_exploded['mentions_list'].map(jid_map)
+        
+        # Filter for known contacts
+        df_exploded = df_exploded.dropna(subset=['mentioned_name'])
+        
+        # 4. Aggregation
+        # Mentions of Me (from Others)
+        # Assuming "Me" is identified by 'from_me=1' in JID map? 
+        # Actually "Me" usually doesn't have a contact_name in the JID map other than "You" (if we set it).
+        # But 'sender_jid_row_id' for ME might be null for my own messages? 
+        # Check parser: We merged 'sender_jid_row_id'. For outgoing messages, does it exist? 
+        # Usually from_me=1 messages have null sender_jid (in DB schema), but we handle "Me".
+        # Let's check who I mention:
+        
+        i_mention = df_exploded[df_exploded['from_me'] == 1]['mentioned_name'].value_counts().head(top_n)
+        
+        # Who mentions Me?
+        # We need to know MY JID row id.
+        # This is tricky. simpler: "Mentions Received by Me"
+        # If I am "You", we look for rows where mentioned_name == "You".
+        mentions_of_me = df_exploded[df_exploded['mentioned_name'] == 'You']['contact_name'].value_counts().head(top_n)
+        
+        return {'i_mention': i_mention, 'who_mentions_me': mentions_of_me}
+
+    def get_historical_stats(self):
+        """
+        Returns:
+        - First Message per chat
+        - Velocity (WPM)
+        """
+        df = self.data.sort_values('timestamp').copy()
+        
+        # 1. First Message
+        first_msgs = df.groupby('contact_name').first()[['timestamp', 'text_data']]
+        # Sort by timestamp
+        first_msgs = first_msgs.sort_values('timestamp')
+        
+        # 2. Velocity (Top active sessions)
+        # Identify "sessions" (gaps < 5 min)
+        # Calculate words / duration
+        # Determine "Fastest Chatter"
+        # Simplify: Max Words Per Minute in any 1-minute bucket?
+        # Or average WPM during active bursts.
+        
+        df_text = df[df['text_data'].notnull()].copy()
+        df_text['word_count'] = df_text['text_data'].astype(str).str.split().str.len()
+        
+        # Group by Minute key
+        df_text['minute_key'] = df_text['timestamp'].dt.floor('min')
+        
+        # Sum words per contact per minute
+        wpm = df_text.groupby(['contact_name', 'minute_key'])['word_count'].sum().reset_index()
+        
+        # Calc Max WPM per contact
+        max_wpm = wpm.groupby('contact_name')['word_count'].max().sort_values(ascending=False)
+        
+        return {'first_msgs': first_msgs, 'velocity_wpm': max_wpm}
 
     def get_true_ghosting_stats(self, threshold_hours=24):
         """
