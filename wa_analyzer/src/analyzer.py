@@ -932,10 +932,12 @@ class WhatsappAnalyzer:
         - Ghosted: I sent -> They Read it (timestamp) -> No Reply > T hours.
         - Left on Delivered: I sent -> No Read -> No Reply > T hours.
         """
-        if 'read_at' not in self.data.columns: return pd.DataFrame()
-        
         threshold_seconds = threshold_hours * 3600
         df = self.data.sort_values(['jid_row_id', 'timestamp']).copy()
+        
+        # Robustness: Ensure read_at exists
+        if 'read_at' not in df.columns:
+            df['read_at'] = pd.NaT
         
         if exclude_list:
             df = df[~df['chat_name'].isin(exclude_list)]

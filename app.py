@@ -797,19 +797,38 @@ if 'data' in st.session_state:
             
         # 1. Hall of Fame
         st.subheader("🏆 Hall of Fame")
+        
+        # New Feature: Percentage Mode
+        use_pct = st.checkbox("Calculate based of % of total message (Density)", value=False, help="Normalizes metrics by the number of messages sent by each person.")
+        
+        # Pre-calculate Message Counts for Normalization
+        # Use full_analyzer data (df_base)
+        # We need a series of contact_name -> message_count
+        if use_pct:
+            # We already have df_base.
+            msg_counts = df_base['contact_name'].value_counts()
+        
         hof_1, hof_2, hof_3 = st.columns(3)
         
-        # Helper to get top user
+        # Helper to get top user with optional normalization
         def get_top(df, col, exclude_list=[]):
             if df.empty or col not in df.columns: return "N/A", 0
-            # Filter
-            idx = df.index
-            # Exclude numbers if possible
-            # We already have filters applied at 'analyzer' level but let's double check
-            sorted_df = df.sort_values(col, ascending=False)
-            if sorted_df.empty: return "N/A", 0
-            top_name = sorted_df.index[0]
-            top_val = sorted_df[col].iloc[0]
+            
+            # If % mode, we need to normalize 'col' by message count
+            # This requires 'df' to have an index of contact_name matching msg_counts
+            target_series = df[col]
+            
+            if use_pct and 'pct' not in col: # Don't normalize columns that are already % (like night_owl_pct)
+                 # Align data
+                 # We need to ensure we match indices
+                 aligned_counts = msg_counts.reindex(target_series.index).fillna(1) # avoid div/0
+                 target_series = (target_series / aligned_counts) * 100
+            
+            sorted_series = target_series.sort_values(ascending=False)
+            if sorted_series.empty: return "N/A", 0
+            
+            top_name = sorted_series.index[0]
+            top_val = sorted_series.iloc[0]
             return top_name, top_val
 
         with hof_1:
@@ -822,14 +841,16 @@ if 'data' in st.session_state:
             
         with hof_3:
             name, val = get_top(fun_stats, 'laughs')
-            st.metric("😂 The Comedian", name, f"{int(val)} Laughs")
+            if use_pct: st.metric("😂 The Comedian", name, f"{val:.1f}% of msgs")
+            else: st.metric("😂 The Comedian", name, f"{int(val)} Laughs")
             
         st.divider()
         
         hof_4, hof_5, hof_6 = st.columns(3)
         with hof_4:
             name, val = get_top(fun_stats, 'deleted')
-            st.metric("🗑️ The Deleter", name, f"{int(val)} Retracted")
+            if use_pct: st.metric("🗑️ The Deleter", name, f"{val:.1f}% of msgs")
+            else: st.metric("🗑️ The Deleter", name, f"{int(val)} Retracted")
             
         with hof_5:
             if not streaks.empty:
@@ -838,29 +859,52 @@ if 'data' in st.session_state:
             else: name, val = "N/A", 0
             st.metric("🔥 Streak Master", name, f"{val} Days")
             
+        with hof_6: # (Was hof_5 in original code, fixing index)
+            # Killers is a Series
             if not killers.empty:
-                name = killers.index[0]
-                val = killers.iloc[0]
-            else: name, val = "N/A", 0
-            st.metric("🤐 Conversation Killer", name, f"{val} Silences (>24h)")
+                target = killers
+                if use_pct:
+                     aligned_counts = msg_counts.reindex(target.index).fillna(1)
+                     target = (target / aligned_counts) * 100
+                     target = target.sort_values(ascending=False)
+                
+                name = target.index[0]
+                val = target.iloc[0]
+                
+                if use_pct: st.metric("🤐 Conversation Killer", name, f"{val:.1f}% Kill Rate")
+                else: st.metric("🤐 Conversation Killer", name, f"{val} Silences")
+            else: 
+                # name, val = "N/A", 0 # Variable leak if block skipped? No.
+                st.metric("🤐 Conversation Killer", "N/A", "0")
             
         st.divider()
         
         hof_7, hof_8, hof_9 = st.columns(3)
         with hof_7:
             name, val = get_top(fun_stats, 'audio_media')
-            st.metric("🎙️ The Podcaster", name, f"{int(val)} Voice Notes")
+            if use_pct: st.metric("🎙️ The Podcaster", name, f"{val:.1f}% of msgs")
+            else: st.metric("🎙️ The Podcaster", name, f"{int(val)} Voice Notes")
             
         with hof_8:
             name, val = get_top(fun_stats, 'gallery_count')
-            st.metric("🖼️ Gallery Curator", name, f"{int(val)} Pics/Vids")
+            if use_pct: st.metric("🖼️ Gallery Curator", name, f"{val:.1f}% of msgs")
+            else: st.metric("🖼️ Gallery Curator", name, f"{int(val)} Pics/Vids")
             
         with hof_9:
              if reaction_stats and not reaction_stats['top_reactors'].empty:
-                 name = reaction_stats['top_reactors'].index[0]
-                 val = reaction_stats['top_reactors'].iloc[0]
-             else: name, val = "N/A", 0
-             st.metric("😍 Reaction addict", name, f"{val} Reactions")
+                 target = reaction_stats['top_reactors'] # This is a Series
+                 if use_pct:
+                      aligned_counts = msg_counts.reindex(target.index).fillna(1)
+                      target = (target / aligned_counts) * 100
+                      target = target.sort_values(ascending=False)
+
+                 name = target.index[0]
+                 val = target.iloc[0]
+                 
+                 if use_pct: st.metric("😍 Reaction addict", name, f"{val:.1f}% Rate")
+                 else: st.metric("😍 Reaction addict", name, f"{val} Reactions")
+             else:
+                 st.metric("😍 Reaction addict", "N/A", "0")
              
         st.divider()
         
@@ -980,7 +1024,8 @@ if 'data' in st.session_state:
         with col_lod2:
              st.write("**People Who Ignore Me** (Them → Me)")
              # Use full_analyzer (need my messages to see if they ignored them)
-             them_ignore_stats = full_analyzer_tab6.get_ghosting_stats() # ghosting = them ignoring me
+             # Use Advanced 'True Ghost' function which returns breakdown (Ghost vs Delivered)
+             them_ignore_stats = full_analyzer_tab6.get_true_ghosting_stats(threshold_hours=24) # ghosting = them ignoring me
              
              if not them_ignore_stats.empty:
                  # It might return a DataFrame with 'count' or 'True Ghost'/'Left on Delivered' columns?
