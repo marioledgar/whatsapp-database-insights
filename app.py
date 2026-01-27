@@ -32,6 +32,7 @@ def load_config(uploaded_file):
                 else:
                     st.session_state[key] = value
             st.success("Configuration loaded! You may need to wait for reload.")
+            st.rerun()
         except Exception as e:
             st.error(f"Error loading config: {e}")
 
@@ -104,18 +105,16 @@ if 'data' in st.session_state:
     st.sidebar.subheader("Filters")
     
     # Date Filter
-    # Ensure default is valid
-    if 'cfg_date_range' not in st.session_state:
-        min_d = df_raw['timestamp'].min().date()
-        max_d = df_raw['timestamp'].max().date()
-        st.session_state['cfg_date_range'] = [min_d, max_d]
-        
     min_date = df_raw['timestamp'].min().date()
     max_date = df_raw['timestamp'].max().date()
     
+    # We pass the default value here. If 'cfg_date_range' is already in session_state 
+    # (e.g. from loaded config), Streamlit will use that value instead.
+    # We do NOT manually set session_state['cfg_date_range'] here to avoid conflicts.
+    
     date_range = st.sidebar.date_input(
         "Date Range", 
-        value=st.session_state.get('cfg_date_range', [min_date, max_date]), 
+        value=[min_date, max_date], 
         min_value=min_date, 
         max_value=max_date,
         key="cfg_date_range"
@@ -258,7 +257,7 @@ if 'data' in st.session_state:
                              color='gender', title=f"Most Active Contacts ({cat_filter})",
                              color_discrete_map={'male': '#636EFA', 'female': '#EF553B', 'unknown': 'gray'})
             fig_bar.update_layout(yaxis={'categoryorder':'total ascending'}, height=600)
-            st.plotly_chart(fig_bar, use_container_width=True)
+            st.plotly_chart(fig_bar, width='stretch')
             
         with col_r:
             st.subheader("Hourly Activity")
@@ -278,7 +277,7 @@ if 'data' in st.session_state:
                 fig_line = px.line(x=hourly.index, y=hourly.values, markers=True, 
                                    labels={'x': 'Hour of Day', 'y': 'Message Count'},
                                    title="Activity by Hour")
-            st.plotly_chart(fig_line, use_container_width=True)
+            st.plotly_chart(fig_line, width='stretch')
             
         st.subheader("Message Volume Over Time")
         show_as_lines = st.checkbox("Show as Lines (Easier Comparison)", value=False)
@@ -302,7 +301,7 @@ if 'data' in st.session_state:
                                      color_discrete_map=color_map)
             else:
                 fig_time = plot_func(x=monthly.index, y=monthly.values, title="Total Volume")
-            st.plotly_chart(fig_time, use_container_width=True)
+            st.plotly_chart(fig_time, width='stretch')
             
         with col_t2:
             st.write(f"**Top Contacts Volume ({cat_filter})**")
@@ -312,7 +311,7 @@ if 'data' in st.session_state:
                 monthly_contacts = analyzer.get_activity_over_time_by_contact(top_contacts_list)
                 fig_contacts = plot_func(monthly_contacts, x=monthly_contacts.index, y=monthly_contacts.columns,
                                        title=f"Top 10 Contacts Activity ({cat_filter})")
-                st.plotly_chart(fig_contacts, use_container_width=True)
+                st.plotly_chart(fig_contacts, width='stretch')
             else:
                 st.info("No contacts match filter.")
         
@@ -333,7 +332,7 @@ if 'data' in st.session_state:
                                    color='gender', title="Unanswered Threads Count",
                                    color_discrete_map={'male': '#636EFA', 'female': '#EF553B', 'unknown': 'gray'})
                 fig_ghost.update_layout(yaxis={'categoryorder':'total ascending'})
-                st.plotly_chart(fig_ghost, use_container_width=True)
+                st.plotly_chart(fig_ghost, width='stretch')
             else:
                 st.write("No ghosting detected!")
 
@@ -345,7 +344,7 @@ if 'data' in st.session_state:
                                     color='gender', title="Ignored Threads Count",
                                     color_discrete_map={'male': '#636EFA', 'female': '#EF553B', 'unknown': 'gray'})
                 fig_ignore.update_layout(yaxis={'categoryorder':'total ascending'})
-                st.plotly_chart(fig_ignore, use_container_width=True)
+                st.plotly_chart(fig_ignore, width='stretch')
             else:
                 st.write("You reply to everyone 😇")
 
@@ -355,7 +354,7 @@ if 'data' in st.session_state:
             initiations = analyzer.get_initiation_stats(init_thresh)
             if not initiations.empty:
                 fig_init = px.bar(initiations[['Me', 'Them']], barmode='group', title="Initiations: Me vs Them")
-                st.plotly_chart(fig_init, use_container_width=True)
+                st.plotly_chart(fig_init, width='stretch')
             else:
                 st.write("Not enough data.")
         
@@ -377,14 +376,14 @@ if 'data' in st.session_state:
                 fig_ft = px.bar(fastest_them, x='their_avg', y='contact_name', orientation='h', 
                                 color='gender', color_discrete_map=color_map, title="Lowest Avg Reply Time (Them)")
                 fig_ft.update_layout(yaxis={'categoryorder':'total descending'}, xaxis_title="Minutes")
-                st.plotly_chart(fig_ft, use_container_width=True)
+                st.plotly_chart(fig_ft, width='stretch')
                 
                 st.write("**Who replies to me the SLOWEST?**")
                 slowest_them = reply_stats.nlargest(8, 'their_avg')
                 fig_st = px.bar(slowest_them, x='their_avg', y='contact_name', orientation='h', 
                                 color='gender', color_discrete_map=color_map, title="Highest Avg Reply Time (Them)")
                 fig_st.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title="Minutes")
-                st.plotly_chart(fig_st, use_container_width=True)
+                st.plotly_chart(fig_st, width='stretch')
                 
             with rt_col2:
                 st.write("**Who do I reply to the FASTEST?**")
@@ -392,14 +391,14 @@ if 'data' in st.session_state:
                 fig_fm = px.bar(fastest_me, x='my_avg', y='contact_name', orientation='h',
                                 color='gender', color_discrete_map=color_map, title="My Lowest Avg Reply Time")
                 fig_fm.update_layout(yaxis={'categoryorder':'total descending'}, xaxis_title="Minutes")
-                st.plotly_chart(fig_fm, use_container_width=True)
+                st.plotly_chart(fig_fm, width='stretch')
                 
                 st.write("**Who do I reply to the SLOWEST?**")
                 slowest_me = reply_stats.nlargest(8, 'my_avg')
                 fig_sm = px.bar(slowest_me, x='my_avg', y='contact_name', orientation='h',
                                 color='gender', color_discrete_map=color_map, title="My Highest Avg Reply Time")
                 fig_sm.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title="Minutes")
-                st.plotly_chart(fig_sm, use_container_width=True)
+                st.plotly_chart(fig_sm, width='stretch')
         else:
             st.info("Not enough conversation data to calculate reply times (need >25 messages).")
 
@@ -419,17 +418,17 @@ if 'data' in st.session_state:
                              title="Messages by Gender",
                              color=gender_counts.index,
                              color_discrete_map={'male': '#636EFA', 'female': '#EF553B', 'unknown': 'gray'})
-            st.plotly_chart(fig_pie, use_container_width=True)
+            st.plotly_chart(fig_pie, width='stretch')
         with c2:
             st.subheader("Deep Dive Metrics")
             if not gender_stats.empty:
-                st.dataframe(gender_stats, use_container_width=True)
+                st.dataframe(gender_stats, width='stretch')
                 metrics = ['count', 'avg_wpm', 'media_pct', 'avg_reply_time']
                 metric_choice = st.selectbox("Select Metric", metrics)
                 fig_comp = px.bar(gender_stats, x='gender', y=metric_choice, 
                                   color='gender', title=f"Comparison: {metric_choice}",
                                   color_discrete_map={'male': '#636EFA', 'female': '#EF553B', 'unknown': 'gray'})
-                st.plotly_chart(fig_comp, use_container_width=True)
+                st.plotly_chart(fig_comp, width='stretch')
 
     with tab4:
         st.header("Word Cloud")
@@ -482,13 +481,13 @@ if 'data' in st.session_state:
                 # Ghosted by Them vs Ghosted by Me
                 fig_g = px.bar(beh_timeline, x=beh_timeline.index, y=['Ghosted by Them', 'Ghosted by Me'], 
                                title="Ghosting Incidents", barmode='group')
-                st.plotly_chart(fig_g, use_container_width=True)
+                st.plotly_chart(fig_g, width='stretch')
                 
             with b2:
                 st.caption("Initiations Over Time")
                 fig_i = px.bar(beh_timeline, x=beh_timeline.index, y=['Initiated by Me', 'Initiated by Them'], 
                                title="Conversation Initiations", barmode='group')
-                st.plotly_chart(fig_i, use_container_width=True)
+                st.plotly_chart(fig_i, width='stretch')
 
             st.subheader("Activity Analysis")
             
@@ -515,7 +514,7 @@ if 'data' in st.session_state:
                 fig_chat_time = plot_func_chat(monthly_chat, x=monthly_chat.index, y=monthly_chat.columns, title=f"Message Volume ({act_view})")
             else:
                 fig_chat_time = plot_func_chat(x=monthly_chat.index, y=monthly_chat.values, title=f"Message Volume ({act_view})")
-            st.plotly_chart(fig_chat_time, use_container_width=True)
+            st.plotly_chart(fig_chat_time, width='stretch')
             
             # Hourly Activity
             hourly_split_arg = 'sender' if act_view != "Combined" else None
@@ -530,7 +529,7 @@ if 'data' in st.session_state:
             else:
                 fig_chat_hour = px.line(x=hourly_chat.index, y=hourly_chat.values, markers=True, title=f"Hourly Activity ({act_view})")
                 
-            st.plotly_chart(fig_chat_hour, use_container_width=True)
+            st.plotly_chart(fig_chat_hour, width='stretch')
 
             st.subheader("Word Usage Comparison")
             if st.button("Generate Comparative Word Clouds"):

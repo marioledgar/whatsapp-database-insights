@@ -396,17 +396,19 @@ class WhatsappAnalyzer:
             
         text_data = df['text_data'].dropna().astype(str)
         
-        def clean_word(text):
-            # Remove URLs (http/https and www.)
-            text = re.sub(r'http\S+|www\.\S+', '', text)
+        # Optimization: Join all text first, then apply regex once.
+        # This is significantly faster than using .apply() on every row.
+        full_text = " ".join(text_data.tolist())
+        
+        # Remove URLs (http/https and www.)
+        full_text = re.sub(r'http\S+|www\.\S+', '', full_text)
+        
+        # Remove Emails if requested
+        if exclude_emails:
+            full_text = re.sub(r'\S+@\S+', '', full_text)
             
-            # Remove Emails if requested
-            if exclude_emails:
-                text = re.sub(r'\S+@\S+', '', text)
-                
-            words = text.lower().split()
-            return " ".join([w for w in words if w not in STOPWORDS and len(w) >= min_word_length])
-            
-        clean_text = text_data.apply(clean_word)
-        full_text = " ".join(clean_text.tolist())
-        return full_text
+        words = full_text.lower().split()
+        # Filter stopwords and short words
+        valid_words = [w for w in words if w not in STOPWORDS and len(w) >= min_word_length]
+        
+        return " ".join(valid_words)
