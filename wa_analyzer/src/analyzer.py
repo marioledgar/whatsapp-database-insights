@@ -221,6 +221,7 @@ class WhatsappAnalyzer:
     def calculate_chat_reply_times(self):
         """Calculates avg reply time for Me and Them in the current dataset"""
         df = self.data.sort_values(['timestamp']).copy()
+        df['read_at'] = pd.to_datetime(df['read_at'], errors='coerce')
         df['time_diff'] = df['timestamp'].diff().dt.total_seconds()
         df['prev_from_me'] = df['from_me'].shift(1)
         
@@ -240,7 +241,17 @@ class WhatsappAnalyzer:
         Different from Reply Time (Received -> Send Reply).
         Returns: (my_avg_min, their_avg_min)
         """
+        if 'read_at' not in self.data.columns:
+            # Missing column -> Failed to parse receipts or old cache
+            return None, None
+
         df = self.data.sort_values(['timestamp']).copy()
+        
+        # Filter out System Messages (7) and maybe Headers to ensure adjacency reflects conversation flow
+        if 'message_type' in df.columns:
+            # Exclude System (7), Revoked (15), GP2 (11, 12 etc) - Keep standard messages
+            # Safest: Keep 0-6 (Text/Media), 13 (Gif), 16 (LiveLoc)
+            df = df[df['message_type'] != 7]
         
         # We need previous message details
         # Shift 1 to get the message I am replying TO
@@ -261,9 +272,18 @@ class WhatsappAnalyzer:
         
         if not my_replies.empty:
             my_replies['write_time'] = (my_replies['timestamp'] - my_replies['prev_read_at']).dt.total_seconds()
-            # Filter outliers (> 24h) and negative times (impossible)
-            my_replies = my_replies[(my_replies['write_time'] > 0) & (my_replies['write_time'] < 86400)]
-            my_avg = my_replies['write_time'].mean()
+            
+            # Relaxed Filter: Allow small negative skew (up to -60s) treated as 0 (Read immediately/concurrently)
+            # Filter outliers (> 48h)
+            my_replies.loc[my_replies['write_time'].between(-60, 0), 'write_time'] = 0
+            
+            valid_mask = (my_replies['write_time'] >= 0) & (my_replies['write_time'] < 172800) # 48h
+            valid_replies = my_replies[valid_mask]
+            
+            if not valid_replies.empty:
+                 my_avg = valid_replies['write_time'].mean()
+            else:
+                 my_avg = None
         else:
             my_avg = None
 
@@ -279,8 +299,19 @@ class WhatsappAnalyzer:
         
         if not their_replies.empty:
             their_replies['write_time'] = (their_replies['timestamp'] - their_replies['prev_read_at']).dt.total_seconds()
-            their_replies = their_replies[(their_replies['write_time'] > 0) & (their_replies['write_time'] < 86400)]
-            their_avg = their_replies['write_time'].mean()
+            
+            # CRITICAL FIX: Median write_time can be negative (e.g. -6 mins) due to notification replies
+            # or lazy read receipts. Instead of dropping them, treat as 0 (Immediate/intertwined).
+            their_replies.loc[their_replies['write_time'] < 0, 'write_time'] = 0
+            
+            # Filter outliers (> 48h)
+            valid_mask = (their_replies['write_time'] >= 0) & (their_replies['write_time'] < 172800)
+            valid_replies = their_replies[valid_mask]
+            
+            if not valid_replies.empty:
+                their_avg = valid_replies['write_time'].mean()
+            else:
+                their_avg = None
         else:
             their_avg = None
             

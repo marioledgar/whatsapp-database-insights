@@ -555,11 +555,9 @@ if 'data' in st.session_state:
         
         if selected_contact:
             # Use df_base (includes 'Me') and filter by chat_name to get the full conversation
-            sub_df = df_base[df_base['chat_name'] == selected_contact]
-            st.write(f"### Analysis: **{selected_contact}**")
+            sub_df = df_base[df_base['chat_name'] == selected_contact].copy()
             st.write(f"### Analysis: **{selected_contact}**")
             
-            # Breakdown Stats
             # Breakdown Stats
             total_msgs = len(sub_df)
             me_rows = sub_df[sub_df['from_me'] == 1]
@@ -652,15 +650,52 @@ if 'data' in st.session_state:
             
             w_help = "Time between READING the message (Blue Tick) and SENDING the reply."
             
+            # Diagnostics for N/A
+            if 'read_at' in sub_df.columns:
+                has_receipts = sub_df['read_at'].notnull().sum() > 0
+                has_incoming_receipts = sub_df[sub_df['from_me'] == 0]['read_at'].notnull().sum() > 0
+                has_outgoing_receipts = sub_df[sub_df['from_me'] == 1]['read_at'].notnull().sum() > 0
+            else:
+                has_receipts = False
+                has_incoming_receipts = False
+                has_outgoing_receipts = False
             if my_write is not None:
                 col_w1.metric("My Avg Write Time", f"{my_write:.1f} min", help=w_help)
             else:
-                col_w1.metric("My Avg Write Time", "N/A", help="Cannot calculate: Database missing 'Read' timestamps for incoming messages.")
+                reason = "Database missing 'Read' timestamps for incoming messages." if not has_incoming_receipts else "Timestamps exist but no direct reply sequence found."
+                col_w1.metric("My Avg Write Time", "N/A", help=f"Cannot calculate: {reason}")
                 
             if their_write is not None:
                 col_w2.metric("Their Avg Write Time", f"{their_write:.1f} min", help=w_help)
             else:
-                col_w2.metric("Their Avg Write Time", "N/A", help="No read receipts available for calculation.")
+                reason = "Contact has Read Receipts DISABLED." if not has_outgoing_receipts else "Read Receipts available but no direct reply sequence found (or system messages interrupted flow)."
+                col_w2.metric("Their Avg Write Time", "N/A", help=f"Cannot calculate: {reason}")
+
+            # Debug Expander (Temporary for troubleshooting)
+            if their_write is None:
+                st.warning("⚠️ Write Time is N/A - Check Debug Info below")
+                with st.expander("Why N/A? (Debug Info)", expanded=True):
+                     st.write(f"Target Chat: '{selected_contact}'")
+                     if 'read_at' not in sub_df.columns:
+                         st.info("No 'read_at' column in this dataset, so read receipts-based stats can't be calculated.")
+                     else:
+                         st.write(f"Incoming Receipts Data Points: {sub_df[sub_df['from_me']==0]['read_at'].notnull().sum()}")
+                         st.write(f"Outgoing Receipts Data Points: {sub_df[sub_df['from_me']==1]['read_at'].notnull().sum()}")
+                         
+                         st.write("Checking Logic...")
+                         try:
+                             # Quick check on raw data
+                             dbg_df = sub_df.sort_values('timestamp').copy()
+                             dbg_df['prev_read'] = dbg_df['read_at'].shift(1)
+                             dbg_df['prev_from'] = dbg_df['from_me'].shift(1)
+                             valid_raw = dbg_df[(dbg_df['from_me']==0) & (dbg_df['prev_from']==1) & (dbg_df['prev_read'].notnull())]
+                             st.write(f"Valid Raw Pairs: {len(valid_raw)}")
+                             if not valid_raw.empty:
+                                 diffs = (valid_raw['timestamp'] - valid_raw['prev_read']).dt.total_seconds()
+                                 st.write("Raw Seconds Stats:")
+                                 st.write(diffs.describe())
+                         except Exception as e:
+                             st.write(f"Debug Error: {e}")
 
             # --- Advanced Chat Stats --- (Use chat_analyzer for specific context)
             dist_them, _ = chat_analyzer.get_advanced_reply_stats(reply_to=0)
@@ -696,8 +731,6 @@ if 'data' in st.session_state:
             # get_true_ghosting_stats is global but returns per contact.
             # We can use full_analyzer_tab6 (if available globablly? No, it was local to Tab 6).
             # Let's instantiate a specific one or use a global 'full_analyzer' if I make it available.
-            # Better: filtered full base.
-            
             full_chat_df = df_base[df_base['chat_name'] == selected_contact]
             full_single_analyzer = WhatsappAnalyzer(full_chat_df)
             

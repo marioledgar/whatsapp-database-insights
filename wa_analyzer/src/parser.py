@@ -36,13 +36,15 @@ class WhatsappParser:
             message.chat_row_id,
             message.key_from_me as from_me,
             message.timestamp,
+            message.received_timestamp,
             message.text_data,
             message.key_id,
             chat.jid_row_id,
             chat.subject,
             message.message_type,
             message.sender_jid_row_id,
-            message_media.mime_type
+            message_media.mime_type,
+            message.receipt_server_timestamp
         FROM message
         LEFT JOIN chat ON message.chat_row_id = chat._id
         LEFT JOIN message_media ON message._id = message_media.message_row_id
@@ -54,13 +56,15 @@ class WhatsappParser:
             message.chat_row_id,
             message.from_me,
             message.timestamp,
+            message.received_timestamp,
             message.text_data,
             message.key_id,
             chat.jid_row_id,
             chat.subject,
             message.message_type,
             message.sender_jid_row_id,
-            message_media.mime_type
+            message_media.mime_type,
+            message.receipt_server_timestamp
         FROM message
         LEFT JOIN chat ON message.chat_row_id = chat._id
         LEFT JOIN message_media ON message._id = message_media.message_row_id
@@ -80,128 +84,6 @@ class WhatsappParser:
         # Convert timestamp to datetime (typically ms in WhatsApp)
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
         return df
-
-    def parse_jids(self):
-        if not self.conn_msg: return pd.DataFrame()
-        try:
-            return pd.read_sql_query("SELECT _id as jid_row_id, raw_string, user FROM jid", self.conn_msg)
-        except:
-             # Fallback for old schema
-             try: 
-                 return pd.read_sql_query("SELECT _id as jid_row_id, raw_string FROM jid", self.conn_msg)
-             except: return pd.DataFrame()
-
-    def parse_wa_contacts(self):
-        if not self.conn_wa: return pd.DataFrame()
-        query = "SELECT jid, display_name FROM wa_contacts"
-        try:
-            return pd.read_sql_query(query, self.conn_wa)
-        except: return pd.DataFrame()
-
-    def parse_vcf(self):
-        contacts = {}
-        if os.path.exists(self.vcf_path):
-            with open(self.vcf_path, 'r') as f:
-                content = f.read()
-                # Simple extraction
-                # FN:Name
-                # TEL;...:Number
-                # This is a naive parse, ideally use vobject but keeping it simple/fast
-                
-                # Split by BEGIN:VCARD
-                cards = content.split('BEGIN:VCARD')
-                for card in cards:
-                    name = None
-                    tels = []
-                    lines = card.splitlines()
-                    for line in lines:
-                        if line.startswith('FN:'):
-                            name = line[3:]
-                        elif line.startswith('TEL'):
-                            # Extract number
-                            parts = line.split(':')
-                            if len(parts) > 1:
-                                num = parts[-1].replace(' ', '').replace('-', '')
-                                tels.append(num)
-                    
-                    if name and tels:
-                        for t in tels:
-                            # Normalize: remove +
-                            t_norm = t.replace('+', '')
-                            contacts[t_norm] = name
-                            # Also store without country code if possible? Hard to guess.
-                            # Just store last 9?
-                            if len(t_norm) > 9:
-                                contacts[t_norm[-9:]] = name
-                    pass
-        return contacts
-
-    def parse_reactions(self):
-        """
-        Parses reactions via message_add_on tables.
-        Returns DataFrame with: message_row_id, reaction, reaction_sender_jid, reaction_timestamp
-        """
-        if not self.conn_msg: return pd.DataFrame()
-        
-        # message_add_on_reaction -> message_add_on -> message
-        query = """
-        SELECT 
-            mao.parent_message_row_id as message_row_id,
-            mar.reaction,
-            mao.sender_jid_row_id,
-            mao.timestamp as reaction_timestamp
-        FROM message_add_on_reaction mar
-        JOIN message_add_on mao ON mar.message_add_on_row_id = mao._id
-        """
-        try:
-            df = pd.read_sql_query(query, self.conn_msg)
-            return df
-        except Exception as e:
-            print(f"Error parsing reactions: {e}")
-            return pd.DataFrame()
-
-    def parse_receipts(self):
-        """
-        Parses reading receipts.
-        Join with message table to link key_id -> message_row_id
-        """
-        if not self.conn_msg: return pd.DataFrame()
-        
-        # Schema for receipts: _id, key_remote_jid, key_id, ...
-        # Message has key_id too.
-        query = """
-        SELECT 
-            m._id as message_row_id,
-            r.read_device_timestamp as read_timestamp,
-            r.played_device_timestamp as played_timestamp
-        FROM receipts r
-        JOIN message m ON r.key_id = m.key_id
-        WHERE r.read_device_timestamp > 0 OR r.played_device_timestamp > 0
-        """
-        try:
-            df = pd.read_sql_query(query, self.conn_msg)
-            return df
-        except Exception as e:
-            print(f"Error parsing receipts: {e}")
-            return pd.DataFrame()
-
-    def parse_mentions(self):
-        if not self.conn_msg: return pd.DataFrame()
-        query = """
-        SELECT message_row_id, jid_row_id as mentioned_jid_row_id FROM message_mentions
-        """
-        try:
-             return pd.read_sql_query(query, self.conn_msg)
-        except: return pd.DataFrame()
-
-    def parse_locations(self):
-        if not self.conn_msg: return pd.DataFrame()
-        query = """
-        SELECT message_row_id, latitude, longitude, place_name, place_address FROM message_location
-        """
-        try:
-             return pd.read_sql_query(query, self.conn_msg)
-        except: return pd.DataFrame()
 
     def parse_jids(self):
         if not self.conn_msg:
@@ -344,13 +226,53 @@ class WhatsappParser:
              return pd.read_sql_query(query, self.conn_msg)
         except: return pd.DataFrame()
 
+
+
     def get_merged_data(self):
         self.connect()
         
         # 1. Get Messages
         messages_df = self.parse_messages()
-        if messages_df.empty:
-            return pd.DataFrame()
+        if messages_df.empty: return pd.DataFrame()
+
+        # 2. Get Receipts
+        receipts_df = self.parse_receipts()
+        
+        # 3. Merge Receipts
+        # receipts_df has message_row_id (from _id or key_id join). 
+        # But wait, parse_receipts (Step 1610) selects m._id as message_row_id.
+        if not receipts_df.empty:
+            # Take latest read time if duplicates
+            receipts_dedup = receipts_df.sort_values('read_timestamp').groupby('message_row_id').last().reset_index()
+            messages_df = pd.merge(messages_df, receipts_dedup[['message_row_id', 'read_timestamp']], left_on='message_row_id', right_on='message_row_id', how='left')
+            messages_df.rename(columns={'read_timestamp': 'read_at'}, inplace=True)
+        else:
+            messages_df['read_at'] = pd.NaT
+
+        # Fallback: Use receipt_server_timestamp if read_at is missing
+        if 'receipt_server_timestamp' in messages_df.columns:
+             # Ensure types match
+             if not pd.api.types.is_datetime64_any_dtype(messages_df['receipt_server_timestamp']):
+                 mask_invalid = messages_df['receipt_server_timestamp'].isna() | (messages_df['receipt_server_timestamp'] <= 0)
+                 messages_df['receipt_server_timestamp'] = pd.to_datetime(
+                     messages_df['receipt_server_timestamp'].where(~mask_invalid),
+                     unit='ms',
+                     errors='coerce'
+                 )
+             
+             messages_df['read_at'] = messages_df['read_at'].fillna(messages_df['receipt_server_timestamp'])
+
+        # Fallback for incoming messages: use received_timestamp when read_at is missing
+        if 'received_timestamp' in messages_df.columns:
+            if not pd.api.types.is_datetime64_any_dtype(messages_df['received_timestamp']):
+                mask_invalid = messages_df['received_timestamp'].isna() | (messages_df['received_timestamp'] <= 0)
+                messages_df['received_timestamp'] = pd.to_datetime(
+                    messages_df['received_timestamp'].where(~mask_invalid),
+                    unit='ms',
+                    errors='coerce'
+                )
+            incoming_mask = (messages_df['from_me'] == 0) & (messages_df['read_at'].isna())
+            messages_df.loc[incoming_mask, 'read_at'] = messages_df.loc[incoming_mask, 'received_timestamp']
 
         # 2. Get JIDs (to link chat_row_id -> raw_string)
         jids_df = self.parse_jids()
@@ -450,7 +372,20 @@ class WhatsappParser:
             receipts_clean['read_at'] = pd.to_datetime(receipts_clean['read_timestamp'], unit='ms')
             merged = pd.merge(merged, receipts_clean[['message_row_id', 'read_at']], on='message_row_id', how='left')
         else:
+            if 'read_at' not in merged.columns:
+                merged['read_at'] = pd.NaT
+
+        # Normalize read_at after potential merge collisions
+        if 'read_at_x' in merged.columns or 'read_at_y' in merged.columns:
+            read_x = merged['read_at_x'] if 'read_at_x' in merged.columns else pd.Series(pd.NaT, index=merged.index)
+            read_y = merged['read_at_y'] if 'read_at_y' in merged.columns else pd.Series(pd.NaT, index=merged.index)
+            merged['read_at'] = read_x.combine_first(read_y)
+            merged.drop(columns=[c for c in ['read_at_x', 'read_at_y'] if c in merged.columns], inplace=True)
+
+        if 'read_at' not in merged.columns:
             merged['read_at'] = pd.NaT
+        else:
+            merged['read_at'] = pd.to_datetime(merged['read_at'], errors='coerce')
             
         # 8. Merge Locations
         locs = self.parse_locations()
