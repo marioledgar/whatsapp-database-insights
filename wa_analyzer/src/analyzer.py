@@ -24,9 +24,11 @@ STOPWORDS = {
 }
 
 class WhatsappAnalyzer:
-    def __init__(self, data: pd.DataFrame):
+    def __init__(self, data: pd.DataFrame, use_medians=False):
         self.data = data.copy()
         self.utils = Utils()
+        self.use_medians = use_medians
+        self.stat_func = "median" if use_medians else "mean"
         if 'gender' not in self.data.columns:
              # Ensure 'contact_name' is string
              self.data['contact_name'] = self.data['contact_name'].fillna('Unknown').astype(str)
@@ -215,8 +217,8 @@ class WhatsappAnalyzer:
         ]['time_diff']
         
         # Filter outliers (> 24h)
-        avg_reply = reply_times[reply_times < 86400].mean() 
-        return avg_reply / 60 if pd.notnull(avg_reply) else 0
+        agg_reply = getattr(reply_times[reply_times < 86400], self.stat_func)()
+        return agg_reply / 60 if pd.notnull(agg_reply) else 0
 
     def calculate_chat_reply_times(self):
         """Calculates avg reply time for Me and Them in the current dataset"""
@@ -227,13 +229,13 @@ class WhatsappAnalyzer:
         
         # My Reply Time: Current is from Me, Prev is from Them
         my_replies = df[(df['from_me'] == 1) & (df['prev_from_me'] == 0)]
-        my_avg = my_replies[my_replies['time_diff'] < 86400]['time_diff'].mean()
+        my_agg = getattr(my_replies[my_replies['time_diff'] < 86400]['time_diff'], self.stat_func)()
         
         # Their Reply Time: Current is from Them, Prev is from Me
         their_replies = df[(df['from_me'] == 0) & (df['prev_from_me'] == 1)]
-        their_avg = their_replies[their_replies['time_diff'] < 86400]['time_diff'].mean()
+        their_agg = getattr(their_replies[their_replies['time_diff'] < 86400]['time_diff'], self.stat_func)()
         
-        return (my_avg / 60 if pd.notnull(my_avg) else 0), (their_avg / 60 if pd.notnull(their_avg) else 0)
+        return (my_agg / 60 if pd.notnull(my_agg) else 0), (their_agg / 60 if pd.notnull(their_agg) else 0)
 
     def calculate_chat_write_times(self):
         """
@@ -281,11 +283,11 @@ class WhatsappAnalyzer:
             valid_replies = my_replies[valid_mask]
             
             if not valid_replies.empty:
-                 my_avg = valid_replies['write_time'].mean()
+                 my_stat = getattr(valid_replies['write_time'], self.stat_func)()
             else:
-                 my_avg = None
+                 my_stat = None
         else:
-            my_avg = None
+            my_stat = None
 
         # Their Write Time:
         # They are replying (from_me=0) to My Msg (prev_from_me=1).
@@ -309,13 +311,13 @@ class WhatsappAnalyzer:
             valid_replies = their_replies[valid_mask]
             
             if not valid_replies.empty:
-                their_avg = valid_replies['write_time'].mean()
+                their_stat = getattr(valid_replies['write_time'], self.stat_func)()
             else:
-                their_avg = None
+                their_stat = None
         else:
-            their_avg = None
+            their_stat = None
             
-        return (my_avg / 60 if pd.notnull(my_avg) else None), (their_avg / 60 if pd.notnull(their_avg) else None)
+        return (my_stat / 60 if pd.notnull(my_stat) else None), (their_stat / 60 if pd.notnull(their_stat) else None)
 
     def calculate_write_time_over_time(self, max_minutes=240, freq='ME'):
         """
@@ -357,13 +359,13 @@ class WhatsappAnalyzer:
 
         if not my_replies.empty:
             my_replies = my_replies[(my_replies['write_time'] >= 0) & (my_replies['write_time'] < max_seconds)]
-            my_series = (my_replies.set_index('timestamp')['write_time'] / 60).resample(freq).mean()
+            my_series = (my_replies.set_index('timestamp')['write_time'] / 60).resample(freq).apply(self.stat_func)
         else:
             my_series = pd.Series(dtype='float64')
 
         if not their_replies.empty:
             their_replies = their_replies[(their_replies['write_time'] >= 0) & (their_replies['write_time'] < max_seconds)]
-            their_series = (their_replies.set_index('timestamp')['write_time'] / 60).resample(freq).mean()
+            their_series = (their_replies.set_index('timestamp')['write_time'] / 60).resample(freq).apply(self.stat_func)
         else:
             their_series = pd.Series(dtype='float64')
 
@@ -390,7 +392,7 @@ class WhatsappAnalyzer:
             text_msgs = g_data[g_data['text_data'].notnull()]['text_data'].astype(str)
             if not text_msgs.empty:
                 word_counts = text_msgs.apply(lambda x: len(x.split()))
-                stats['avg_wpm'] = word_counts.mean()
+                stats['avg_wpm'] = getattr(word_counts, self.stat_func)()
             else:
                 stats['avg_wpm'] = 0
             
@@ -419,7 +421,7 @@ class WhatsappAnalyzer:
             ]
             
             valid_times = replies['time_diff'][replies['time_diff'] < 86400]
-            stats['avg_reply_time'] = (valid_times.mean() / 60) if not valid_times.empty else 0
+            stats['avg_reply_time'] = (getattr(valid_times, self.stat_func)() / 60) if not valid_times.empty else 0
 
             # Media Percentage
             if 'mime_type' in g_data.columns:
@@ -607,7 +609,7 @@ class WhatsappAnalyzer:
         ]
         
         # Group by CHAT (not contact, because contact is 'You' for me)
-        stats = valid_responses.groupby(['chat_name', 'from_me'])['time_delta'].mean().reset_index()
+        stats = valid_responses.groupby(['chat_name', 'from_me'])['time_delta'].apply(lambda x: getattr(x, self.stat_func)()).reset_index()
         
         # Exclude list filter
         if exclude_list:
@@ -677,8 +679,8 @@ class WhatsappAnalyzer:
                 # Filter out > 180 min (considered new sessions or idle)
                 d.drop(d[~d['write_time'].between(0, max_delay_seconds)].index, inplace=True)
 
-        my_stats = my_replies.groupby('chat_name')['write_time'].mean().reset_index(name='my_avg')
-        their_stats = their_replies.groupby('chat_name')['write_time'].mean().reset_index(name='their_avg')
+        my_stats = my_replies.groupby('chat_name')['write_time'].apply(lambda x: getattr(x, self.stat_func)()).reset_index(name='my_avg')
+        their_stats = their_replies.groupby('chat_name')['write_time'].apply(lambda x: getattr(x, self.stat_func)()).reset_index(name='their_avg')
         
         stats = pd.merge(my_stats, their_stats, on='chat_name', how='outer')
         
@@ -862,14 +864,14 @@ class WhatsappAnalyzer:
         # Filter 0 word length
         text_only = text_only[text_only['word_count'] > 0]
         
-        avg_len = text_only.groupby('contact_name')['word_count'].mean()
-        avg_len = avg_len[avg_len > 0]
+        agg_len = text_only.groupby('contact_name')['word_count'].apply(lambda x: getattr(x, self.stat_func)())
+        agg_len = agg_len[agg_len > 0]
         
         stats = pd.DataFrame({
             'laughs': laugh_counts,
             'media': media_counts,
             'deleted': deleted_counts,
-            'avg_word_len': avg_len
+            'avg_word_len': agg_len
         }).fillna(0)
         
         # Add gender
@@ -1273,15 +1275,15 @@ class WhatsappAnalyzer:
             
         distribution = replies.groupby(['chat_name', 'bucket'], observed=False).size().unstack(fill_value=0)
         
-        # Averages
-        avgs = replies.groupby('chat_name')['delta'].mean() / 60 # Minutes
+        # Aggregates
+        aggs = replies.groupby('chat_name')['delta'].apply(lambda x: getattr(x, self.stat_func)()) / 60 # Minutes
         
         # Filter sparse contacts
         counts = replies['chat_name'].value_counts()
         valid_contacts = counts[counts >= 5].index
-        avgs = avgs[avgs.index.isin(valid_contacts)]
+        aggs = aggs[aggs.index.isin(valid_contacts)]
         
-        return distribution, avgs
+        return distribution, aggs
         
     def get_left_on_delivered_stats(self, threshold_seconds=86400):
         """
