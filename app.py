@@ -605,19 +605,35 @@ if 'data' in st.session_state:
             # Pie Chart Controls
             hide_text = st.checkbox("Hide 'Text' messages (Focus on Media)", value=False)
             
-            pie_data = sub_df['type_category'].value_counts().reset_index()
-            pie_data.columns = ['Type', 'Count']
+            # Helper to generate pie data for a subset
+            def get_pie_data(df_source, hide_text_flag):
+                 if df_source.empty: return pd.DataFrame()
+                 p_data = df_source['type_category'].value_counts().reset_index()
+                 p_data.columns = ['Type', 'Count']
+                 if hide_text_flag:
+                     p_data = p_data[p_data['Type'] != 'Text']
+                 return p_data
+
+            pie_me = get_pie_data(sub_df[sub_df['from_me'] == 1], hide_text)
+            pie_them = get_pie_data(sub_df[sub_df['from_me'] == 0], hide_text)
             
-            if hide_text:
-                pie_data = pie_data[pie_data['Type'] != 'Text']
+            p1, p2 = st.columns(2)
             
-            if not pie_data.empty:
-                fig_pie = px.pie(pie_data, values='Count', names='Type', title="Message Types Distribution",
-                                 color='Type', 
-                                 color_discrete_map={'Text': 'lightgray', 'Image': '#636EFA', 'Video': '#EF553B', 'Audio': '#00CC96', 'Sticker': '#AB63FA'})
-                st.plotly_chart(fig_pie, width='stretch')
-            else:
-                st.info("No media data to display with current filter.")
+            color_map = {'Text': 'lightgray', 'Image': '#636EFA', 'Video': '#EF553B', 'Audio': '#00CC96', 'Sticker': '#AB63FA'}
+            
+            with p1:
+                if not pie_me.empty:
+                    fig_pie_me = px.pie(pie_me, values='Count', names='Type', title="Me",
+                                     color='Type', color_discrete_map=color_map)
+                    st.plotly_chart(fig_pie_me, width='stretch')
+                else: st.info("No data (Me)")
+                
+            with p2:
+                 if not pie_them.empty:
+                    fig_pie_them = px.pie(pie_them, values='Count', names='Type', title="Them",
+                                     color='Type', color_discrete_map=color_map)
+                    st.plotly_chart(fig_pie_them, width='stretch')
+                 else: st.info("No data (Them)")
             
             
             chat_analyzer = WhatsappAnalyzer(sub_df)
