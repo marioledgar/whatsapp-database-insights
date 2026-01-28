@@ -560,13 +560,65 @@ if 'data' in st.session_state:
             st.write(f"### Analysis: **{selected_contact}**")
             
             # Breakdown Stats
+            # Breakdown Stats
             total_msgs = len(sub_df)
-            me_count = sub_df[sub_df['from_me'] == 1].shape[0]
+            me_rows = sub_df[sub_df['from_me'] == 1]
+            them_rows = sub_df[sub_df['from_me'] == 0]
+            
+            me_count = len(me_rows)
             them_count = total_msgs - me_count
             me_pct = (me_count / total_msgs * 100) if total_msgs > 0 else 0
             them_pct = (them_count / total_msgs * 100) if total_msgs > 0 else 0
             
-            st.write(f"**Total Messages:** {total_msgs} &nbsp; | &nbsp; **Me:** {me_count} ({me_pct:.1f}%) &nbsp; | &nbsp; **Them:** {them_count} ({them_pct:.1f}%)")
+            # Word Counts
+            me_words = me_rows['text_data'].fillna('').astype(str).apply(lambda x: len(x.split())).sum()
+            them_words = them_rows['text_data'].fillna('').astype(str).apply(lambda x: len(x.split())).sum()
+            total_words = me_words + them_words
+            me_word_pct = (me_words / total_words * 100) if total_words > 0 else 0
+            them_word_pct = (them_words / total_words * 100) if total_words > 0 else 0
+            
+            st.markdown(f"""
+            **Messages**: {total_msgs} total
+            - **Me**: {me_count} ({me_pct:.1f}%)
+            - **Them**: {them_count} ({them_pct:.1f}%)
+            
+            **Words**: {total_words} total
+            - **Me**: {me_words:,} ({me_word_pct:.1f}%)
+            - **Them**: {them_words:,} ({them_word_pct:.1f}%)
+            """)
+            
+            # --- Media Pie Chart ---
+            st.write("### Message Composition")
+            
+            # Categorize
+            def categorize_msg(row):
+                 mime = str(row.get('mime_type', ''))
+                 if pd.isna(mime) or mime == '' or mime == 'None': return 'Text'
+                 if 'image/webp' in mime: return 'Sticker'
+                 if 'image' in mime: return 'Image'
+                 if 'video' in mime: return 'Video'
+                 if 'audio' in mime: return 'Audio'
+                 return 'Other'
+            
+            sub_df['type_category'] = sub_df.apply(categorize_msg, axis=1)
+            
+            # Pie Chart Controls
+            hide_text = st.checkbox("Hide 'Text' messages (Focus on Media)", value=False)
+            
+            pie_data = sub_df['type_category'].value_counts().reset_index()
+            pie_data.columns = ['Type', 'Count']
+            
+            if hide_text:
+                pie_data = pie_data[pie_data['Type'] != 'Text']
+            
+            if not pie_data.empty:
+                fig_pie = px.pie(pie_data, values='Count', names='Type', title="Message Types Distribution",
+                                 color='Type', 
+                                 color_discrete_map={'Text': 'lightgray', 'Image': '#636EFA', 'Video': '#EF553B', 'Audio': '#00CC96', 'Sticker': '#AB63FA'})
+                st.plotly_chart(fig_pie, width='stretch')
+            else:
+                st.info("No media data to display with current filter.")
+            
             
             chat_analyzer = WhatsappAnalyzer(sub_df)
             my_reply, their_reply = chat_analyzer.calculate_chat_reply_times()
@@ -575,8 +627,9 @@ if 'data' in st.session_state:
             col_s1.metric("My Avg Reply Time", f"{my_reply:.1f} min")
             col_s2.metric("Their Avg Reply Time", f"{their_reply:.1f} min")
             
-            # --- Advanced Chat Stats ---
-            # Use chat_analyzer to get stats for this specific chat (efficient & correct context)
+            st.caption("ℹ️ **Calculation Method**: Time elapsed between a received message and your first subsequent reply (and vice versa). Does not account for 'Read' time, only delivery/sent timestamps.")
+            
+            # --- Advanced Chat Stats --- (Use chat_analyzer for specific context)
             dist_them, _ = chat_analyzer.get_advanced_reply_stats(reply_to=0)
             dist_me, _ = chat_analyzer.get_advanced_reply_stats(reply_to=1)
             
@@ -861,10 +914,25 @@ if 'data' in st.session_state:
             
         with hof_5:
             if not streaks.empty:
-                name = streaks.idxmax()
-                val = streaks.max()
-            else: name, val = "N/A", 0
-            st.metric("🔥 Streak Master", name, f"{val} Days")
+                # new get_streak_stats returns DataFrame with 'streak', 'start_date', 'end_date'
+                # Check format just in case
+                if isinstance(streaks, pd.DataFrame):
+                    top_row = streaks.iloc[0]
+                    name = top_row.name # index is contact_name
+                    val = top_row['streak']
+                    s_date = top_row.get('start_date', '?')
+                    e_date = top_row.get('end_date', '?')
+                    tooltip_txt = f"Longest Streak: {s_date} to {e_date}"
+                else: 
+                    # Legacy fallback if something weird happens
+                    name = streaks.idxmax()
+                    val = streaks.max()
+                    tooltip_txt = "Date range unavailable"
+            else: 
+                name, val = "N/A", 0
+                tooltip_txt = ""
+                
+            st.metric("🔥 Streak Master", name, f"{val} Days", help=tooltip_txt)
             
         with hof_6: # (Was hof_5 in original code, fixing index)
             # Killers is a Series
@@ -1073,7 +1141,9 @@ if 'data' in st.session_state:
             st.subheader("🌵 Dry Texter Index")
             st.caption("Average words per message.")
             if not fun_stats.empty:
-                dry_df = fun_stats.sort_values('avg_word_len', ascending=True).head(15)
+                # Filter out 0 value (Media only or empty text)
+                mask_dry = fun_stats['avg_word_len'] > 0
+                dry_df = fun_stats[mask_dry].sort_values('avg_word_len', ascending=True).head(15)
                 fig_dry = px.bar(dry_df, x='avg_word_len', y=dry_df.index, orientation='h',
                                  title="Shortest Responses (Dryest)",
                                  color='gender', color_discrete_map={'male': '#636EFA', 'female': '#EF553B', 'unknown': 'gray'})

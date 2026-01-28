@@ -781,14 +781,14 @@ class WhatsappAnalyzer:
     def get_streak_stats(self, exclude_groups=False):
         """
         Calculates the longest streak of consecutive days with messages.
-        Returns Series: contact_name (Chat) -> longest_streak (int)
+        Returns DataFrame: index (contact_name), streak (int), start_date, end_date
         """
         df = self.data.copy()
         if exclude_groups: df = df[~df['is_group']]
         
         df['date'] = df['timestamp'].dt.date
         
-        results = {}
+        results = []
         
         # Group by Chat Name (Conversation)
         # Strength: This combines Me + Them into one timeline.
@@ -800,19 +800,41 @@ class WhatsappAnalyzer:
             sorted_dates = sorted(dates)
             max_streak = 1
             current_streak = 1
+            best_start = sorted_dates[0]
+            best_end = sorted_dates[0]
+            
+            cur_start = sorted_dates[0]
             
             for i in range(1, len(sorted_dates)):
                 delta = (sorted_dates[i] - sorted_dates[i-1]).days
                 if delta == 1:
                     current_streak += 1
                 else:
-                    max_streak = max(max_streak, current_streak)
+                    if current_streak > max_streak:
+                        max_streak = current_streak
+                        best_start = cur_start
+                        best_end = sorted_dates[i-1]
+                        
                     current_streak = 1
+                    cur_start = sorted_dates[i]
             
-            max_streak = max(max_streak, current_streak)
-            results[name] = max_streak
+            # Check last segment
+            if current_streak > max_streak:
+                max_streak = current_streak
+                best_start = cur_start
+                best_end = sorted_dates[-1]
                 
-        return pd.Series(results, name='longest_streak').sort_values(ascending=False)
+            results.append({
+                'contact_name': name, 
+                'streak': max_streak,
+                'start_date': best_start,
+                'end_date': best_end
+            })
+                
+        if not results: return pd.DataFrame()
+        
+        df_res = pd.DataFrame(results).set_index('contact_name')
+        return df_res.sort_values('streak', ascending=False)
 
     def get_conversation_killers(self, threshold_seconds=86400, exclude_groups=False):
         """
