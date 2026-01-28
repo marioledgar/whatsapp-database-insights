@@ -274,10 +274,10 @@ class WhatsappAnalyzer:
             my_replies['write_time'] = (my_replies['timestamp'] - my_replies['prev_read_at']).dt.total_seconds()
             
             # Relaxed Filter: Allow small negative skew (up to -60s) treated as 0 (Read immediately/concurrently)
-            # Filter outliers (> 48h)
+            # Filter outliers (> 240 min)
             my_replies.loc[my_replies['write_time'].between(-60, 0), 'write_time'] = 0
             
-            valid_mask = (my_replies['write_time'] >= 0) & (my_replies['write_time'] < 172800) # 48h
+            valid_mask = (my_replies['write_time'] >= 0) & (my_replies['write_time'] < 14400) # 240 min
             valid_replies = my_replies[valid_mask]
             
             if not valid_replies.empty:
@@ -304,8 +304,8 @@ class WhatsappAnalyzer:
             # or lazy read receipts. Instead of dropping them, treat as 0 (Immediate/intertwined).
             their_replies.loc[their_replies['write_time'] < 0, 'write_time'] = 0
             
-            # Filter outliers (> 48h)
-            valid_mask = (their_replies['write_time'] >= 0) & (their_replies['write_time'] < 172800)
+            # Filter outliers (> 240 min)
+            valid_mask = (their_replies['write_time'] >= 0) & (their_replies['write_time'] < 14400)
             valid_replies = their_replies[valid_mask]
             
             if not valid_replies.empty:
@@ -316,6 +316,61 @@ class WhatsappAnalyzer:
             their_avg = None
             
         return (my_avg / 60 if pd.notnull(my_avg) else None), (their_avg / 60 if pd.notnull(their_avg) else None)
+
+    def calculate_write_time_over_time(self, max_minutes=240, freq='ME'):
+        """
+        Returns average write time over time for Me and Them.
+        max_minutes: ignore write times above this threshold.
+        freq: resample frequency (default month-end).
+        """
+        if 'read_at' not in self.data.columns:
+            return pd.DataFrame()
+
+        df = self.data.sort_values(['timestamp']).copy()
+        df['read_at'] = pd.to_datetime(df['read_at'], errors='coerce')
+
+        if 'message_type' in df.columns:
+            df = df[df['message_type'] != 7]
+
+        df['prev_from_me'] = df['from_me'].shift(1)
+        df['prev_read_at'] = df['read_at'].shift(1)
+
+        max_seconds = max_minutes * 60
+
+        my_replies = df[
+            (df['from_me'] == 1) &
+            (df['prev_from_me'] == 0) &
+            (df['prev_read_at'].notnull())
+        ].copy()
+
+        their_replies = df[
+            (df['from_me'] == 0) &
+            (df['prev_from_me'] == 1) &
+            (df['prev_read_at'].notnull())
+        ].copy()
+
+        for replies in (my_replies, their_replies):
+            if not replies.empty:
+                replies['write_time'] = (replies['timestamp'] - replies['prev_read_at']).dt.total_seconds()
+                replies.loc[replies['write_time'] < 0, 'write_time'] = 0
+                replies = replies[(replies['write_time'] >= 0) & (replies['write_time'] < max_seconds)]
+
+        if not my_replies.empty:
+            my_replies = my_replies[(my_replies['write_time'] >= 0) & (my_replies['write_time'] < max_seconds)]
+            my_series = (my_replies.set_index('timestamp')['write_time'] / 60).resample(freq).mean()
+        else:
+            my_series = pd.Series(dtype='float64')
+
+        if not their_replies.empty:
+            their_replies = their_replies[(their_replies['write_time'] >= 0) & (their_replies['write_time'] < max_seconds)]
+            their_series = (their_replies.set_index('timestamp')['write_time'] / 60).resample(freq).mean()
+        else:
+            their_series = pd.Series(dtype='float64')
+
+        if my_series.empty and their_series.empty:
+            return pd.DataFrame()
+
+        return pd.DataFrame({'Me': my_series, 'Them': their_series}).dropna(how='all')
 
     def calculate_gender_stats(self):
         metrics = []

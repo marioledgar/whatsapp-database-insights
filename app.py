@@ -648,7 +648,7 @@ if 'data' in st.session_state:
             
             col_w1, col_w2 = st.columns(2)
             
-            w_help = "Time between READING the message (Blue Tick) and SENDING the reply."
+            w_help = "Time between READING the message (Blue Tick) and SENDING the reply. Replies over 180 minutes are ignored."
             
             # Diagnostics for N/A
             if 'read_at' in sub_df.columns:
@@ -670,6 +670,22 @@ if 'data' in st.session_state:
             else:
                 reason = "Contact has Read Receipts DISABLED." if not has_outgoing_receipts else "Read Receipts available but no direct reply sequence found (or system messages interrupted flow)."
                 col_w2.metric("Their Avg Write Time", "N/A", help=f"Cannot calculate: {reason}")
+
+            # Write Time Over Time
+            st.write("### Write Time Over Time")
+            wt_over_time = chat_analyzer.calculate_write_time_over_time(max_minutes=180, freq='ME')
+            if not wt_over_time.empty:
+                fig_wt = px.line(
+                    wt_over_time,
+                    x=wt_over_time.index,
+                    y=wt_over_time.columns,
+                    markers=True,
+                    labels={'value': 'Minutes', 'index': 'Month', 'variable': 'Sender'},
+                    title="Avg Write Time Over Time"
+                )
+                st.plotly_chart(fig_wt, use_container_width=True)
+            else:
+                st.caption("No write-time data available for this chat.")
 
             # Debug Expander (Temporary for troubleshooting)
             if their_write is None:
