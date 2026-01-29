@@ -11,6 +11,14 @@ REPO_NAME="full-whatsapp-database-insights"
 echo "🚀 WhatsApp Database Insights - Quickstart"
 echo "==========================================="
 
+# Check arguments
+USE_VENV=true
+for arg in "$@"; do
+    if [ "$arg" == "--no-venv" ]; then
+        USE_VENV=false
+    fi
+done
+
 # --- 1. Clone or navigate into the repo ---
 if [ -d ".git" ] && git remote get-url origin 2>/dev/null | grep -q "$REPO_NAME"; then
     echo "✅ Already inside the repository"
@@ -48,34 +56,41 @@ $PYTHON_CMD -m ensurepip --upgrade --quiet 2>/dev/null && \
 $PYTHON_CMD -m pip install --upgrade pip --quiet
 
 # --- 4. Create or activate virtual environment ---
-VENV_DIR=".venv"
+if [ "$USE_VENV" = true ]; then
+    VENV_DIR=".venv"
 
-if [ ! -d "$VENV_DIR" ]; then
-    echo "🔧 Creating virtual environment..."
-    $PYTHON_CMD -m venv "$VENV_DIR"
-fi
+    if [ ! -d "$VENV_DIR" ]; then
+        echo "🔧 Creating virtual environment..."
+        $PYTHON_CMD -m venv "$VENV_DIR"
+    fi
 
-echo "🔌 Activating virtual environment..."
-# Cross-platform activation
-if [ -f "$VENV_DIR/bin/activate" ]; then
-    source "$VENV_DIR/bin/activate"
-elif [ -f "$VENV_DIR/Scripts/activate" ]; then
-    source "$VENV_DIR/Scripts/activate"
+    echo "🔌 Activating virtual environment..."
+    # Cross-platform activation
+    if [ -f "$VENV_DIR/bin/activate" ]; then
+        source "$VENV_DIR/bin/activate"
+    elif [ -f "$VENV_DIR/Scripts/activate" ]; then
+        source "$VENV_DIR/Scripts/activate"
+    else
+        echo "❌ Could not find venv activation script"
+        exit 1
+    fi
+
+    # Use venv python for subsequent commands
+    PYTHON_CMD="python"
+
+    # Upgrade pip inside venv
+    $PYTHON_CMD -m pip install --upgrade pip --quiet
 else
-    echo "❌ Could not find venv activation script"
-    exit 1
+    echo "🚫 Skipping virtual environment setup (--no-venv flag detected)."
 fi
-
-# Upgrade pip inside venv
-pip install --upgrade pip --quiet
 
 # --- 5. Install dependencies ---
 echo "📚 Installing dependencies..."
 if [ -f "wa_analyzer/requirements.txt" ]; then
-    pip install -r wa_analyzer/requirements.txt --quiet
+    $PYTHON_CMD -m pip install -r wa_analyzer/requirements.txt --quiet
 else
     echo "⚠️  requirements.txt not found, installing essential packages..."
-    pip install streamlit pandas plotly matplotlib seaborn wordcloud emoji gender-guesser vobject attrs --quiet
+    $PYTHON_CMD -m pip install streamlit pandas plotly matplotlib seaborn wordcloud emoji gender-guesser vobject attrs --quiet
 fi
 
 # --- 6. Run the Streamlit app ---
@@ -84,4 +99,4 @@ echo "============================================"
 echo "✨ Setup complete! Launching the app..."
 echo "============================================"
 echo ""
-streamlit run app.py
+$PYTHON_CMD -m streamlit run app.py
