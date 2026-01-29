@@ -263,8 +263,6 @@ if 'data' in st.session_state:
     st.sidebar.markdown(f"**User**: {me_display}")
 
     analyzer = WhatsappAnalyzer(filtered_df, use_medians=use_medians)
-    
-    analyzer = WhatsappAnalyzer(filtered_df, use_medians=use_medians)
 
     # --- KPI Row ---
     # Fix: Calculate Stats from df_base (Unfiltered) to avoid "Sent: 0" when Exclude Me is on

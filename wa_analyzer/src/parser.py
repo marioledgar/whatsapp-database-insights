@@ -363,25 +363,8 @@ class WhatsappParser:
         
         # --- Advanced Data Merging ---
         
-        # 7. Merge Receipts (for Ghosting)
-        receipts = self.parse_receipts()
-        if not receipts.empty:
-            # Group by message_id, take min read_timestamp > 0
-            receipts_clean = receipts[receipts['read_timestamp'] > 0].groupby('message_row_id')['read_timestamp'].min().reset_index()
-            # Convert to datetime
-            receipts_clean['read_at'] = pd.to_datetime(receipts_clean['read_timestamp'], unit='ms')
-            merged = pd.merge(merged, receipts_clean[['message_row_id', 'read_at']], on='message_row_id', how='left')
-        else:
-            if 'read_at' not in merged.columns:
-                merged['read_at'] = pd.NaT
-
-        # Normalize read_at after potential merge collisions
-        if 'read_at_x' in merged.columns or 'read_at_y' in merged.columns:
-            read_x = merged['read_at_x'] if 'read_at_x' in merged.columns else pd.Series(pd.NaT, index=merged.index)
-            read_y = merged['read_at_y'] if 'read_at_y' in merged.columns else pd.Series(pd.NaT, index=merged.index)
-            merged['read_at'] = read_x.combine_first(read_y)
-            merged.drop(columns=[c for c in ['read_at_x', 'read_at_y'] if c in merged.columns], inplace=True)
-
+        # Note: Receipts already merged in Step 3 above (lines 244-276).
+        # Ensure read_at column exists and is properly typed.
         if 'read_at' not in merged.columns:
             merged['read_at'] = pd.NaT
         else:
