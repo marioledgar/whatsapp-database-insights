@@ -11,13 +11,13 @@ A powerful Streamlit-based analyzer for your WhatsApp message database. Get deep
 Run this single command to clone, setup, and launch the app:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/victor-gurbani/full-whatsapp-database-insights/main/quickstart.sh | bash
+curl -sSL https://raw.githubusercontent.com/victor-gurbani/whatsapp-database-insights/main/quickstart.sh | bash
 ```
 
 Or if you prefer `wget`:
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/victor-gurbani/full-whatsapp-database-insights/main/quickstart.sh | bash
+wget -qO- https://raw.githubusercontent.com/victor-gurbani/whatsapp-database-insights/main/quickstart.sh | bash
 ```
 
 > **Note**: This works on **macOS**, **Linux**, and **Windows** (via Git Bash or WSL).
@@ -30,8 +30,8 @@ If you prefer to set things up manually:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/victor-gurbani/full-whatsapp-database-insights.git
-cd full-whatsapp-database-insights
+git clone https://github.com/victor-gurbani/whatsapp-database-insights.git
+cd whatsapp-database-insights
 
 # 2. Create and activate virtual environment
 python3 -m venv .venv

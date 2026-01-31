@@ -5,8 +5,8 @@
 # ---------------------------------------------------------------
 set -e
 
-REPO_URL="https://github.com/victor-gurbani/full-whatsapp-database-insights.git"
-REPO_NAME="full-whatsapp-database-insights"
+REPO_URL="https://github.com/victor-gurbani/whatsapp-database-insights.git"
+REPO_NAME="whatsapp-database-insights"
 
 echo "🚀 WhatsApp Database Insights - Quickstart"
 echo "==========================================="
