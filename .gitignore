@@ -10,3 +10,6 @@ whatsapp-backup-chat-viewer/
 *.pyc
 .ipynb_checkpoints
 .env
+
+.venv/
+venv
