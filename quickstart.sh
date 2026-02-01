@@ -33,6 +33,9 @@ if [ -d ".git" ] && git remote get-url origin 2>/dev/null | grep -q "$REPO_NAME"
 elif [ -d "$REPO_NAME" ]; then
     echo "📂 Found existing $REPO_NAME folder, entering..."
     cd "$REPO_NAME"
+elif [ -d "GitHub/$REPO_NAME" ]; then
+    echo "📂 Found existing GitHub/$REPO_NAME folder, entering..."
+    cd "GitHub/$REPO_NAME"
 else
     echo "📥 Cloning repository..."
     git clone "$REPO_URL"
