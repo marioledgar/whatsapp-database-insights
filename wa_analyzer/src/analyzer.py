@@ -779,8 +779,15 @@ class WhatsappAnalyzer:
                 # Filter out > 180 min (considered new sessions or idle)
                 d.drop(d[~d['write_time'].between(0, max_delay_seconds)].index, inplace=True)
 
-        my_stats = my_replies.groupby('chat_name')['write_time'].apply(lambda x: getattr(x, self.stat_func)()).reset_index(name='my_avg')
-        their_stats = their_replies.groupby('chat_name')['write_time'].apply(lambda x: getattr(x, self.stat_func)()).reset_index(name='their_avg')
+        if not my_replies.empty and 'write_time' in my_replies.columns:
+            my_stats = my_replies.groupby('chat_name')['write_time'].apply(lambda x: getattr(x, self.stat_func)()).reset_index(name='my_avg')
+        else:
+            my_stats = pd.DataFrame(columns=['chat_name', 'my_avg'])
+
+        if not their_replies.empty and 'write_time' in their_replies.columns:
+            their_stats = their_replies.groupby('chat_name')['write_time'].apply(lambda x: getattr(x, self.stat_func)()).reset_index(name='their_avg')
+        else:
+            their_stats = pd.DataFrame(columns=['chat_name', 'their_avg'])
         
         stats = pd.merge(my_stats, their_stats, on='chat_name', how='outer')
         
