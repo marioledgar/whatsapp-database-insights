@@ -341,7 +341,7 @@ if 'data' in st.session_state:
             fig_bar = px.bar(top_talkers_final, x='count', y='contact_name', orientation='h', 
                              color='gender', title=f"Most Active Contacts ({cat_filter})",
                              color_discrete_map={'male': '#636EFA', 'female': '#EF553B', 'unknown': 'gray'})
-            fig_bar.update_layout(yaxis={'categoryorder':'total ascending'}, height=600)
+            fig_bar.update_layout(yaxis={'categoryorder':'total ascending', 'type': 'category'}, height=600)
             st.plotly_chart(fig_bar, width='stretch')
             
         with col_r:
@@ -493,7 +493,7 @@ if 'data' in st.session_state:
                 fig_ghost = px.bar(ghosts, x='count', y='contact_name', orientation='h', 
                                    color='gender', title="Unanswered Threads Count",
                                    color_discrete_map={'male': '#636EFA', 'female': '#EF553B', 'unknown': 'gray'})
-                fig_ghost.update_layout(yaxis={'categoryorder':'total ascending'})
+                fig_ghost.update_layout(yaxis={'categoryorder':'total ascending', 'type': 'category'})
                 st.plotly_chart(fig_ghost, width='stretch')
             else:
                 st.write("No ghosting detected!")
@@ -517,7 +517,7 @@ if 'data' in st.session_state:
                 fig_ignore = px.bar(ignored_reset, x=cols_to_plot, y='contact_name', orientation='h',
                                     title="Ignored Threads Count",
                                     color=color_arg, color_discrete_map=color_map)
-                fig_ignore.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title="Count")
+                fig_ignore.update_layout(yaxis={'categoryorder':'total ascending', 'type': 'category'}, xaxis_title="Count")
                 st.plotly_chart(fig_ignore, width='stretch')
             else:
                 st.write("You reply to everyone 😇")
@@ -591,14 +591,14 @@ if 'data' in st.session_state:
                 fastest_them = reply_stats.nsmallest(8, 'their_avg')
                 fig_ft = px.bar(fastest_them, x='their_avg', y='contact_name', orientation='h', 
                                 color='gender', color_discrete_map=color_map, title="Lowest Avg Reply Time (Them)")
-                fig_ft.update_layout(yaxis={'categoryorder':'total descending'}, xaxis_title="Minutes")
+                fig_ft.update_layout(yaxis={'categoryorder':'total descending', 'type': 'category'}, xaxis_title="Minutes")
                 st.plotly_chart(fig_ft, width='stretch')
                 
                 st.write("**Who replies to me the SLOWEST?**")
                 slowest_them = reply_stats.nlargest(8, 'their_avg')
                 fig_st = px.bar(slowest_them, x='their_avg', y='contact_name', orientation='h', 
                                 color='gender', color_discrete_map=color_map, title="Highest Avg Reply Time (Them)")
-                fig_st.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title="Minutes")
+                fig_st.update_layout(yaxis={'categoryorder':'total ascending', 'type': 'category'}, xaxis_title="Minutes")
                 st.plotly_chart(fig_st, width='stretch')
                 
             with rt_col2:
@@ -606,14 +606,14 @@ if 'data' in st.session_state:
                 fastest_me = reply_stats.nsmallest(8, 'my_avg')
                 fig_fm = px.bar(fastest_me, x='my_avg', y='contact_name', orientation='h',
                                 color='gender', color_discrete_map=color_map, title="My Lowest Avg Reply Time")
-                fig_fm.update_layout(yaxis={'categoryorder':'total descending'}, xaxis_title="Minutes")
+                fig_fm.update_layout(yaxis={'categoryorder':'total descending', 'type': 'category'}, xaxis_title="Minutes")
                 st.plotly_chart(fig_fm, width='stretch')
                 
                 st.write("**Who do I reply to the SLOWEST?**")
                 slowest_me = reply_stats.nlargest(8, 'my_avg')
                 fig_sm = px.bar(slowest_me, x='my_avg', y='contact_name', orientation='h',
                                 color='gender', color_discrete_map=color_map, title="My Highest Avg Reply Time")
-                fig_sm.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title="Minutes")
+                fig_sm.update_layout(yaxis={'categoryorder':'total ascending', 'type': 'category'}, xaxis_title="Minutes")
                 st.plotly_chart(fig_sm, width='stretch')
         else:
             st.info("Not enough conversation data to calculate reply times (need >25 messages).")
@@ -641,14 +641,14 @@ if 'data' in st.session_state:
                 fastest_wt_them = write_stats.nsmallest(8, 'their_avg')
                 fig_fwt = px.bar(fastest_wt_them, x='their_avg', y='contact_name', orientation='h', 
                                  color='gender', color_discrete_map=color_map, title="Lowest Avg Write Time (Them)")
-                fig_fwt.update_layout(yaxis={'categoryorder':'total descending'}, xaxis_title="Minutes")
+                fig_fwt.update_layout(yaxis={'categoryorder':'total descending', 'type': 'category'}, xaxis_title="Minutes")
                 st.plotly_chart(fig_fwt, width='stretch')
                 
                 st.write("**Who takes the LONGEST to write a reply to me?**")
                 slowest_wt_them = write_stats.nlargest(8, 'their_avg')
                 fig_swt = px.bar(slowest_wt_them, x='their_avg', y='contact_name', orientation='h', 
                                  color='gender', color_discrete_map=color_map, title="Highest Avg Write Time (Them)")
-                fig_swt.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title="Minutes")
+                fig_swt.update_layout(yaxis={'categoryorder':'total ascending', 'type': 'category'}, xaxis_title="Minutes")
                 st.plotly_chart(fig_swt, width='stretch')
                 
             with wt_col2:
@@ -656,14 +656,14 @@ if 'data' in st.session_state:
                 fastest_wt_me = write_stats.nsmallest(8, 'my_avg')
                 fig_fwm = px.bar(fastest_wt_me, x='my_avg', y='contact_name', orientation='h',
                                  color='gender', color_discrete_map=color_map, title="My Lowest Avg Write Time")
-                fig_fwm.update_layout(yaxis={'categoryorder':'total descending'}, xaxis_title="Minutes")
+                fig_fwm.update_layout(yaxis={'categoryorder':'total descending', 'type': 'category'}, xaxis_title="Minutes")
                 st.plotly_chart(fig_fwm, width='stretch')
                 
                 st.write("**Who do I take the LONGEST to write back to?**")
                 slowest_wt_me = write_stats.nlargest(8, 'my_avg')
                 fig_swm = px.bar(slowest_wt_me, x='my_avg', y='contact_name', orientation='h',
                                  color='gender', color_discrete_map=color_map, title="My Highest Avg Write Time")
-                fig_swm.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title="Minutes")
+                fig_swm.update_layout(yaxis={'categoryorder':'total ascending', 'type': 'category'}, xaxis_title="Minutes")
                 st.plotly_chart(fig_swm, width='stretch')
         else:
             st.info("No write time history found (Receipts might be disabled).")
